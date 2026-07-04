@@ -28,6 +28,7 @@ set(CMAKE_CXX_FLAGS_PROFILE "${CMAKE_CXX_FLAGS_RELEASE}")
 
 # Use Unicode for all projects.
 add_definitions(-DUNICODE -D_UNICODE)
+add_definitions(-D_SILENCE_EXPERIMENTAL_COROUTINE_DEPRECATION_WARNINGS)
 
 # Compilation settings that should be applied to most targets.
 function(APPLY_STANDARD_SETTINGS TARGET)
@@ -45,6 +46,9 @@ add_subdirectory(${FLUTTER_MANAGED_DIR})
 
 # Application build
 add_subdirectory("runner")
+
+# pdfx 插件优先使用本地 pdfium，避免构建时从 GitHub 下载失败
+set(PDFIUM_LOCAL_DIR "${CMAKE_CURRENT_SOURCE_DIR}/third_party/pdfium" CACHE PATH "Local pdfium directory")
 
 # Generated plugin build rules, which manage building the plugins and adding
 # them to the application.

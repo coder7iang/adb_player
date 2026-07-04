@@ -17,8 +17,10 @@ Future<void> _initSystemTray() async {
     return;
   }
 
-  // 使用现有的应用图标
-  const String iconPath = 'images/app_icon.png';
+  // Windows 托盘图标需要 ico，其他桌面平台继续使用 png。
+  final String iconPath = Platform.isWindows
+      ? 'images/app_icon.ico'
+      : 'images/app_icon.png';
 
   await _systemTray.initSystemTray(
     title: '',
@@ -68,6 +70,7 @@ void main() async {
     const windowOptions = WindowOptions(
       size: Size(960, 720),
       center: true,
+      backgroundColor: Colors.transparent,
       title: 'AdbPlayer',
       titleBarStyle: TitleBarStyle.hidden,
     );
@@ -80,14 +83,12 @@ void main() async {
       await windowManager.setPreventClose(true);
     });
 
-    await _initSystemTray();
+    _initSystemTray().catchError((Object error, StackTrace stackTrace) {
+      debugPrint('初始化系统托盘失败: $error');
+    });
   }
 
-  runApp(
-    const ProviderScope(
-      child: MyApp(),
-    ),
-  );
+  runApp(const ProviderScope(child: MyApp()));
 }
 
 class MyApp extends StatefulWidget {
@@ -133,9 +134,7 @@ class _MyAppState extends State<MyApp> with WindowListener {
     return MaterialApp(
       title: 'AdbPlayer',
       debugShowCheckedModeBanner: false,
-      theme: ThemeData(
-        primarySwatch: Colors.blue,
-      ),
+      theme: ThemeData(primarySwatch: Colors.blue),
       home: const MainPage(),
       // 配置 SmartDialog
       navigatorObservers: [FlutterSmartDialog.observer],

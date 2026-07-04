@@ -24,13 +24,14 @@ class AdbService {
   String adbPath = "";
   String currentDeviceId = "";
   String selectedPackage = "";
-  
-  
+
+  /// 防止并发重复下载 ADB
+  static Future<String>? _downloadingAdb;
 
   /// 设置 ADB 路径
-  setAdbPath(String path) {
-    App().setAdbPath(path);
+  Future<void> setAdbPath(String path) async {
     adbPath = path;
+    await App().setAdbPath(path);
   }
 
   /// 获取 ADB 路径
@@ -48,6 +49,9 @@ class AdbService {
   /// 返回 ProcessResult 或 null（如果执行失败）
   /// 异常信息会记录在日志中，调用方需要检查返回值并处理错误
   Future<dynamic> _exec(String executable, List<String> arguments) async {
+    if (Platform.isWindows && executable.toLowerCase().endsWith('.exe')) {
+      return _execProcessWithRetry(executable, arguments);
+    }
     try {
       var shell = Shell();
       var result = await shell.runExecutableArguments(executable, arguments);
@@ -70,6 +74,53 @@ class AdbService {
       }
       return null;
     }
+  }
+
+  /// Windows 下直接启动 exe，并在文件被占用时重试
+  Future<ProcessResult?> _execProcessWithRetry(
+    String executable,
+    List<String> arguments, {
+    int maxAttempts = 6,
+  }) async {
+    for (var attempt = 0; attempt < maxAttempts; attempt++) {
+      try {
+        return await Process.run(
+          executable,
+          arguments,
+          runInShell: false,
+        );
+      } on ProcessException catch (e) {
+        final message = e.message;
+        final locked = message.contains('另一个程序') ||
+            message.contains('being used') ||
+            message.contains('cannot access');
+        if (locked && attempt < maxAttempts - 1) {
+          final delayMs = 400 * (attempt + 1);
+          debugPrint('可执行文件被占用，${delayMs}ms 后重试: $executable');
+          await Future.delayed(Duration(milliseconds: delayMs));
+          continue;
+        }
+        debugPrint('执行命令异常: $e');
+        return null;
+      }
+    }
+    return null;
+  }
+
+  /// 等待解压后的可执行文件在 Windows 上可用
+  Future<bool> _waitUntilExecutableReady(String path) async {
+    final file = File(path);
+    for (var attempt = 0; attempt < 10; attempt++) {
+      if (await file.exists()) {
+        try {
+          final handle = await file.open(mode: FileMode.read);
+          await handle.close();
+          return true;
+        } catch (_) {}
+      }
+      await Future.delayed(Duration(milliseconds: 300 * (attempt + 1)));
+    }
+    return false;
   }
 
   /// 执行 ADB 命令
@@ -101,23 +152,42 @@ class AdbService {
   checkAdb() async {
     bool hasAdb = await _getAdbPath();
     if (hasAdb) {
+      debugPrint('使用已缓存的 ADB: $adbPath');
       return;
     }
     var executable = Platform.isWindows ? "where" : "which";
     var result = await _exec(executable, ['adb']);
     if (result != null && result.exitCode == 0) {
       adbPath = result.stdout.toString().trim();
-      setAdbPath(adbPath);
+      await setAdbPath(adbPath);
+      debugPrint('使用系统 PATH 中的 ADB: $adbPath');
       return;
     }
+    debugPrint('系统 PATH 未找到 adb，开始下载...');
     adbPath = await downloadAdb();
     if (adbPath.isNotEmpty) {
-      setAdbPath(adbPath);
+      await setAdbPath(adbPath);
+      debugPrint('ADB 下载完成: $adbPath');
+    } else {
+      debugPrint('ADB 下载失败，请检查网络或在设置页手动配置路径');
     }
   }
 
   /// 下载 ADB 文件
   Future<String> downloadAdb() async {
+    if (_downloadingAdb != null) {
+      debugPrint('ADB 正在下载中，等待完成...');
+      return _downloadingAdb!;
+    }
+    _downloadingAdb = _downloadAdbImpl();
+    try {
+      return await _downloadingAdb!;
+    } finally {
+      _downloadingAdb = null;
+    }
+  }
+
+  Future<String> _downloadAdbImpl() async {
     try {
       var directory = await getTemporaryDirectory();
       var downloadPath = directory.path +
@@ -125,23 +195,32 @@ class AdbService {
           "platform-tools" +
           Platform.pathSeparator;
 
+      await Directory(downloadPath).create(recursive: true);
+
       var url = "";
       if (Platform.isMacOS) {
         url =
-            "https://dl.google.com/android/repository/platform-tools-latest-darwin.zip";
+            "https://coder7iang-1320222289.cos.ap-guangzhou.myqcloud.com/adb/platform-tools-latest-darwin.zip";
       } else if (Platform.isWindows) {
         url =
-            "https://dl.google.com/android/repository/platform-tools-latest-windows.zip";
+            "https://coder7iang-1320222289.cos.ap-guangzhou.myqcloud.com/adb/platform-tools-latest-windows.zip";
       } else {
         url =
             "https://dl.google.com/android/repository/platform-tools-latest-linux.zip";
       }
 
       var filePath = downloadPath + "platform-tools-latest.zip";
+      debugPrint('开始下载 ADB: $url');
       var response = await Dio().download(url, filePath);
+      debugPrint('ADB 下载响应: ${response.statusCode}');
 
       if (response.statusCode == 200) {
         String result = await unzipPlatformToolsFile(filePath);
+        if (result.isNotEmpty) {
+          debugPrint('ADB 解压完成: $result');
+        } else {
+          debugPrint('ADB 解压失败，未找到 adb.exe');
+        }
         return result;
       }
 
@@ -193,6 +272,11 @@ class AdbService {
         // 设置可执行权限
         if (Platform.isMacOS || Platform.isLinux) {
           await _exec("chmod", ["+x", adbPath]);
+        } else if (Platform.isWindows) {
+          final ready = await _waitUntilExecutableReady(adbPath);
+          if (!ready) {
+            debugPrint('ADB 文件尚未就绪: $adbPath');
+          }
         }
         return adbPath;
       }

@@ -164,6 +164,34 @@ class ScrcpyService {
     }
   }
 
+  /// 解压前清空目标目录，避免旧文件干扰
+  Future<void> _prepareExtractDirectory(String savePath) async {
+    final directory = Directory(savePath);
+    if (await directory.exists()) {
+      await directory.delete(recursive: true);
+    }
+    await directory.create(recursive: true);
+  }
+
+  /// Windows 下优先使用 PowerShell 解压 zip
+  Future<bool> _extractZipOnWindows(String zipPath, String savePath) async {
+    final result = await Process.run(
+      'powershell',
+      [
+        '-NoProfile',
+        '-Command',
+        "Expand-Archive -LiteralPath '$zipPath' -DestinationPath '$savePath' -Force",
+      ],
+      runInShell: false,
+    );
+    if (result.exitCode == 0) {
+      debugPrint('使用 PowerShell 解压 ZIP 成功');
+      return true;
+    }
+    debugPrint('PowerShell 解压失败: ${result.stderr}');
+    return false;
+  }
+
   /// 解压 ADB zip 文件
   Future<String> unzipScrcpyFile(String unzipFilePath) async {
     try {
@@ -173,30 +201,36 @@ class ScrcpyService {
           "scrcpy" +
           Platform.pathSeparator;
 
-      // 确保目录存在
-      var directory = Directory(savePath);
-      if (!await directory.exists()) {
-        await directory.create(recursive: true);
-      }
+      await _prepareExtractDirectory(savePath);
 
       // 根据文件类型选择解压方法
       var fileName = unzipFilePath.split(Platform.pathSeparator).last;
-      debugPrint('开始解压文件: $fileName');
-      
+      final zipSize = await File(unzipFilePath).length();
+      debugPrint('开始解压文件: $fileName (${(zipSize / 1024 / 1024).toStringAsFixed(2)} MB)');
+
       if (fileName.endsWith('.zip')) {
-        // Windows ZIP 文件
-        try {
-          var bytes = await File(unzipFilePath).readAsBytes();
-          var archive = ZipDecoder().decodeBytes(bytes);
-          extractArchiveToDisk(archive, savePath);
-          debugPrint('使用 archive 包解压 ZIP 成功');
-        } catch (e) {
-          debugPrint('使用 archive 包解压 ZIP 失败，尝试使用系统命令: $e');
-          if (Platform.isWindows) {
-            await _exec("powershell", ["-Command", "Expand-Archive -Path '$unzipFilePath' -DestinationPath '$savePath' -Force"]);
-          } else {
-            await _exec("unzip", ["-o", unzipFilePath, "-d", savePath]);
+        var extracted = false;
+        if (Platform.isWindows) {
+          extracted = await _extractZipOnWindows(unzipFilePath, savePath);
+        }
+        if (!extracted) {
+          try {
+            var bytes = await File(unzipFilePath).readAsBytes();
+            var archive = ZipDecoder().decodeBytes(bytes);
+            extractArchiveToDisk(archive, savePath);
+            debugPrint('使用 archive 包解压 ZIP 成功');
+            extracted = true;
+          } catch (e) {
+            debugPrint('使用 archive 包解压 ZIP 失败: $e');
+            if (!Platform.isWindows) {
+              await _exec("unzip", ["-o", unzipFilePath, "-d", savePath]);
+              extracted = true;
+            }
           }
+        }
+        if (!extracted) {
+          debugPrint('ZIP 解压失败');
+          return "";
         }
       } else if (fileName.endsWith('.tar.gz')) {
         // macOS/Linux TAR.GZ 文件 - 直接使用系统命令解压
@@ -265,6 +299,13 @@ class ScrcpyService {
       }
 
       debugPrint('未找到 scrcpy 可执行文件');
+      if (Platform.isWindows) {
+        SmartDialogUtils.showError(
+          'scrcpy 解压不完整，可能缺少 scrcpy.exe。\n'
+          '请检查 Windows 安全中心是否拦截了 adb.exe / scrcpy.exe，'
+          '允许后删除目录重新下载：\n$savePath',
+        );
+      }
       return "";
     } catch (e) {
       debugPrint('解压ADB文件失败: $e');
@@ -295,8 +336,8 @@ class ScrcpyService {
           var name = entity.path.split(Platform.pathSeparator).last;
           allFiles.add(name);
           
-          // 查找 scrcpy 文件
-          if (name == 'scrcpy') {
+          // 查找 scrcpy 可执行文件
+          if (name == 'scrcpy' || name == 'scrcpy.exe') {
             scrcpyCandidates.add(entity.path);
           }
         }
@@ -388,6 +429,8 @@ class ScrcpyService {
           "scrcpy" +
           Platform.pathSeparator;
 
+      await Directory(downloadPath).create(recursive: true);
+
       var url = "";
       if (Platform.isMacOS) {
         // 检测 macOS 架构
@@ -412,16 +455,20 @@ class ScrcpyService {
           url = "https://coder7iang-1320222289.cos.ap-guangzhou.myqcloud.com/scrcpy-macos-x86_64-v3.3.4.tar.gz";
         }
       } else if (Platform.isWindows) {
-        url = "https://coder7iang.oss-cn-beijing.aliyuncs.com/scrcpy-win64-v3.3.2.zip";
-        // url =
-        //     "https://github.com/Genymobile/scrcpy/releases/download/v3.3.2/scrcpy-win64-v3.3.2.zip";
+        final arch =
+            Platform.environment['PROCESSOR_ARCHITECTURE']?.toLowerCase() ?? '';
+        final is64Bit = arch.contains('64') || arch == 'arm64';
+        url = is64Bit
+            ? "https://coder7iang-1320222289.cos.ap-guangzhou.myqcloud.com/scrcpy/scrcpy-win64-v4.0.zip"
+            : "https://coder7iang-1320222289.cos.ap-guangzhou.myqcloud.com/scrcpy/scrcpy-win32-v4.0.zip";
       } else {
         url = "https://coder7iang.oss-cn-beijing.aliyuncs.com/scrcpy-linux-x86_64-v3.3.2.tar.gz";
         // url =
         //     "https://github.com/Genymobile/scrcpy/releases/download/v3.3.2/scrcpy-linux-x86_64-v3.3.2.tar.gz";
       }
 
-      var filePath = downloadPath + "scrcpy-latest.tar.gz";
+      var filePath = downloadPath +
+          (Platform.isWindows ? "scrcpy-latest.zip" : "scrcpy-latest.tar.gz");
       
       // 显示下载进度对话框
       var success = await SmartDialogUtils.showDownloadProgress(

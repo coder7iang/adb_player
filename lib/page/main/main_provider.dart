@@ -14,17 +14,24 @@ final mainProvider = StateNotifierProvider<MainNotifier, MainState>(
 
 /// 主页面的状态管理器
 class MainNotifier extends StateNotifier<MainState> {
-  MainNotifier() : super(const MainState()) {
-    // 初始化时检查 ADB 并获取设备列表
-    init();
-  }
+  MainNotifier() : super(const MainState());
+
+  bool _initializing = false;
 
   /// 初始化
   Future<void> init() async {
-    await checkAdb();
-    await checkScrcpy();
-    if (state.isAdbAvailable) {
-      await getDeviceList();
+    if (_initializing) {
+      return;
+    }
+    _initializing = true;
+    try {
+      await checkAdb();
+      await checkScrcpy();
+      if (state.isAdbAvailable) {
+        await getDeviceList();
+      }
+    } finally {
+      _initializing = false;
     }
   }
   
@@ -36,7 +43,9 @@ class MainNotifier extends StateNotifier<MainState> {
   /// 检查 ADB 是否可用
   Future<void> checkAdb() async {
     await AdbService.instance.checkAdb();
-    String adbPath = await App().getAdbPath();
+    final adbPath = AdbService.instance.adbPath.isNotEmpty
+        ? AdbService.instance.adbPath
+        : await App().getAdbPath();
     state = state.copyWith(
       adbPath: adbPath,
       isAdbAvailable: adbPath.isNotEmpty,
