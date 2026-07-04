@@ -29,6 +29,7 @@
 .pub-cache/
 .pub/
 /build/
+/dist/
 windows/third_party/
 
 # Web related
