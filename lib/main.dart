@@ -20,12 +20,14 @@ Future<void> _initSystemTray() async {
   // Windows 托盘图标需要 ico，其他桌面平台继续使用 png。
   final String iconPath = Platform.isWindows
       ? 'images/app_icon.ico'
-      : 'images/app_icon.png';
+          : 'images/app_icon.png';
 
   await _systemTray.initSystemTray(
     title: '',
     iconPath: iconPath,
     toolTip: 'AdbPlayer',
+    // 仅 macOS：作为模板图渲染，跟随系统主题变黑/白。
+    isTemplate: Platform.isMacOS,
   );
 
   await _trayMenu.buildFrom([
