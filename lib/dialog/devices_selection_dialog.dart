@@ -10,7 +10,7 @@ class DeviceSelectionDialog extends ConsumerStatefulWidget {
   final List<DevicesModel> devices;
   final List<DevicesModel> Function() getCurrentDevices;
   final DevicesModel? currentDevice;
-  final Function()? refreshCallback;
+  final Future<void> Function()? refreshCallback;
 
   const DeviceSelectionDialog({
     Key? key,
@@ -31,12 +31,19 @@ class _DeviceSelectionDialogState extends ConsumerState<DeviceSelectionDialog> {
   void initState() {
     super.initState();
     searchController = TextEditingController();
-    
-    // 初始化设备列表
-    WidgetsBinding.instance.addPostFrameCallback((_) {
+
+    // 先展示缓存列表，再后台静默刷新
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
       ref.read(devicesSelectionProvider.notifier).setDevices(widget.devices);
+      if (widget.refreshCallback != null) {
+        await widget.refreshCallback!();
+        if (!mounted) return;
+        ref
+            .read(devicesSelectionProvider.notifier)
+            .refreshDevices(widget.getCurrentDevices());
+      }
     });
-    
+
     // 监听搜索输入
     searchController.addListener(() {
       ref.read(devicesSelectionProvider.notifier).setSearchText(searchController.text);
@@ -209,9 +216,8 @@ class _DeviceSelectionDialogState extends ConsumerState<DeviceSelectionDialog> {
                                     tooltip: '断开无线连接',
                                     color: Colors.red[400],
                                     onPressed: () async {
-                                      final parts = device.id.split(':');
                                       await AdbService.instance
-                                          .disconnectDevice(parts[0], parts[1]);
+                                          .disconnectDevice(device.id);
                                       if (widget.refreshCallback != null) {
                                         widget.refreshCallback!();
                                         await Future.delayed(
@@ -249,8 +255,8 @@ class _DeviceSelectionDialogState extends ConsumerState<DeviceSelectionDialog> {
                         builder: (context) => const WirelessConnectDialog(),
                       );
                       if (widget.refreshCallback != null) {
-                        widget.refreshCallback!();
-                        await Future.delayed(const Duration(milliseconds: 500));
+                        await widget.refreshCallback!();
+                        if (!mounted) return;
                         final newDevices = widget.getCurrentDevices();
                         notifier.refreshDevices(newDevices);
                       }
@@ -261,11 +267,8 @@ class _DeviceSelectionDialogState extends ConsumerState<DeviceSelectionDialog> {
                   if (widget.refreshCallback != null)
                     TextButton(
                       onPressed: () async {
-                        // 执行刷新回调
-                        widget.refreshCallback!();
-                        // 等待一下让设备列表更新
-                        await Future.delayed(const Duration(milliseconds: 500));
-                        // 获取最新的设备列表并更新UI
+                        await widget.refreshCallback!();
+                        if (!mounted) return;
                         final newDevices = widget.getCurrentDevices();
                         notifier.refreshDevices(newDevices);
                       },

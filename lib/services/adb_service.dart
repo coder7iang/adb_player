@@ -28,10 +28,20 @@ class AdbService {
   /// 防止并发重复下载 ADB
   static Future<String>? _downloadingAdb;
 
+  /// 是否已用 ADB_MDNS_AUTO_CONNECT=0 重启过 server（禁用无线自动重连）
+  bool _wirelessAutoConnectDisabled = false;
+
+  /// ADB 进程环境：禁用 mDNS 无线自动连接，USB 插拔仍可正常识别
+  Map<String, String> get _adbEnvironment => {
+        ...Platform.environment,
+        'ADB_MDNS_AUTO_CONNECT': '0',
+      };
+
   /// 设置 ADB 路径
   Future<void> setAdbPath(String path) async {
     adbPath = path;
     await App().setAdbPath(path);
+    await _ensureWirelessAutoConnectDisabled();
   }
 
   /// 获取 ADB 路径
@@ -48,12 +58,23 @@ class AdbService {
   /// 执行系统命令
   /// 返回 ProcessResult 或 null（如果执行失败）
   /// 异常信息会记录在日志中，调用方需要检查返回值并处理错误
-  Future<dynamic> _exec(String executable, List<String> arguments) async {
+  Future<dynamic> _exec(
+    String executable,
+    List<String> arguments, {
+    Map<String, String>? environment,
+  }) async {
     if (Platform.isWindows && executable.toLowerCase().endsWith('.exe')) {
-      return _execProcessWithRetry(executable, arguments);
+      return _execProcessWithRetry(
+        executable,
+        arguments,
+        environment: environment,
+      );
     }
     try {
-      var shell = Shell();
+      var shell = Shell(
+        environment: environment,
+        includeParentEnvironment: environment == null,
+      );
       var result = await shell.runExecutableArguments(executable, arguments);
       return result;
     } catch (e) {
@@ -80,6 +101,7 @@ class AdbService {
   Future<ProcessResult?> _execProcessWithRetry(
     String executable,
     List<String> arguments, {
+    Map<String, String>? environment,
     int maxAttempts = 6,
   }) async {
     for (var attempt = 0; attempt < maxAttempts; attempt++) {
@@ -87,6 +109,8 @@ class AdbService {
         return await Process.run(
           executable,
           arguments,
+          environment: environment,
+          includeParentEnvironment: environment == null,
           runInShell: false,
         );
       } on ProcessException catch (e) {
@@ -128,7 +152,11 @@ class AdbService {
   /// 如果抛出异常，会尝试从异常中提取 ProcessResult
   Future<ProcessResult?> _execAdb(List<String> arguments) async {
     try {
-      var result = await _exec(adbPath, arguments);
+      var result = await _exec(
+        adbPath,
+        arguments,
+        environment: _adbEnvironment,
+      );
       return result;
     } catch (e) {
       debugPrint('执行 ADB 命令异常: $e');
@@ -148,11 +176,26 @@ class AdbService {
     }
   }
 
+  /// 重启 adb server 并禁用无线 mDNS 自动连接（手动断开后不会再连上）
+  /// USB 设备不受影响，插上仍会自动出现在设备列表
+  Future<void> _ensureWirelessAutoConnectDisabled() async {
+    if (_wirelessAutoConnectDisabled || adbPath.isEmpty) return;
+    try {
+      await _execAdb(['kill-server']);
+      await _execAdb(['start-server']);
+      _wirelessAutoConnectDisabled = true;
+      debugPrint('已禁用 ADB 无线自动连接 (ADB_MDNS_AUTO_CONNECT=0)');
+    } catch (e) {
+      debugPrint('禁用无线自动连接失败: $e');
+    }
+  }
+
   /// 获取adb路径
   checkAdb() async {
     bool hasAdb = await _getAdbPath();
     if (hasAdb) {
       debugPrint('使用已缓存的 ADB: $adbPath');
+      await _ensureWirelessAutoConnectDisabled();
       return;
     }
     var executable = Platform.isWindows ? "where" : "which";
@@ -293,37 +336,96 @@ class AdbService {
     try {
       var result = await _execAdb(['devices']);
       if (result != null && result.exitCode == 0) {
-        List<DevicesModel> devices = [];
-        // 从 stdout 获取内容
+        final ids = <String>[];
         var stdout = result.stdout.toString().trim();
         if (stdout.isNotEmpty) {
-          var lines = stdout.split('\n');
-          for (var line in lines) {
+          for (var line in stdout.split('\n')) {
             line = line.trim();
             if (line.isEmpty) continue;
-            if (line.contains("List of devices attached")) {
-              continue;
-            }
-            if (line.contains("device")) {
-              var deviceLine = line.split("\t");
-              if (deviceLine.length < 2) {
-                deviceLine = line.split(" ");
-              }
-              if (deviceLine.isNotEmpty) {
-                var device = deviceLine[0];
-                var brand = await _getBrand(device);
-                var model = await _getModel(device);
-                devices.add(DevicesModel(brand, model, device));
-              }
+            if (line.contains("List of devices attached")) continue;
+            // 仅匹配状态为 device 的行，避免误伤其他状态
+            final parts = line.contains('\t')
+                ? line.split('\t')
+                : line.split(RegExp(r'\s+'));
+            if (parts.length >= 2 && parts[1] == 'device') {
+              ids.add(parts[0]);
             }
           }
         }
-        return devices;
+        // 先去重再查 brand/model，避免对重复的 mDNS 通道白跑 getprop
+        final uniqueIds = await _dedupeWirelessSerialIds(ids);
+        if (uniqueIds.isEmpty) return [];
+        return Future.wait(uniqueIds.map((id) async {
+          final info = await _getBrandAndModel(id);
+          return DevicesModel(info.$1, info.$2, id);
+        }));
       }
     } catch (e) {
       debugPrint('获取设备列表失败: $e');
     }
     return [];
+  }
+
+  /// 若同一无线设备同时存在 ip:port 与 mDNS 序列号，优先保留 ip:port
+  Future<List<String>> _dedupeWirelessSerialIds(List<String> ids) async {
+    final ipPortIds = ids
+        .where((id) => RegExp(r'^\d+\.\d+\.\d+\.\d+:\d+$').hasMatch(id))
+        .toSet();
+    if (ipPortIds.isEmpty) return ids;
+
+    final hasMdnsSerial = ids.any(
+      (id) => id.contains('_adb-tls-connect._tcp'),
+    );
+    if (!hasMdnsSerial) return ids;
+
+    final mdns = await listMdnsServices();
+    final mdnsNamesToHide = <String>{};
+    for (final s in mdns) {
+      if (!s.isConnect) continue;
+      if (!ipPortIds.contains(s.endpoint)) continue;
+      mdnsNamesToHide.add(s.name);
+      mdnsNamesToHide.add('${s.name}._adb-tls-connect._tcp');
+    }
+
+    // mDNS 列表暂时对不上时：按主机 IP 兜底隐藏同机的 tls-connect 通道
+    if (mdnsNamesToHide.isEmpty) {
+      final hosts = ipPortIds.map((e) => e.split(':').first).toSet();
+      // 能从序列号里抠出的硬件号，用于和 USB 序列对照
+      final usbSerials = ids
+          .where((id) => !id.contains(':') && !id.contains('_adb-tls'))
+          .toSet();
+
+      return ids.where((id) {
+        if (!id.contains('_adb-tls-connect._tcp')) return true;
+        // 形如 adb-10AF140QX60026M-xxxx._adb-tls-connect._tcp
+        final m = RegExp(r'^adb-([^-._]+)').firstMatch(id);
+        if (m != null && usbSerials.contains(m.group(1))) {
+          return false;
+        }
+        // 仅一台无线 ip:port 时，隐藏全部 mdns 项（同机双通道的常见情况）
+        if (ipPortIds.length == 1) return false;
+        // 多台时：若 mdns 服务能提供 host 信息再判；此处无 host 则保留以免误伤
+        for (final s in mdns) {
+          if (s.isConnect &&
+              hosts.contains(s.host) &&
+              (id == s.name ||
+                  id == '${s.name}._adb-tls-connect._tcp' ||
+                  id.startsWith('${s.name}.'))) {
+            return false;
+          }
+        }
+        return true;
+      }).toList();
+    }
+
+    return ids.where((id) {
+      if (!id.contains('_adb-tls-connect._tcp')) return true;
+      if (mdnsNamesToHide.contains(id)) return false;
+      for (final name in mdnsNamesToHide) {
+        if (id == name || id.startsWith('$name.')) return false;
+      }
+      return true;
+    }).toList();
   }
 
   /// 无线配对设备
@@ -345,15 +447,65 @@ class AdbService {
     }
   }
 
+  /// 列出 mDNS 发现的 ADB 无线服务（配对 / 连接）
+  Future<List<AdbMdnsService>> listMdnsServices() async {
+    try {
+      var result = await _execAdb(['mdns', 'services']);
+      if (result == null) return [];
+      final stdout = result.stdout.toString();
+      final services = <AdbMdnsService>[];
+      for (var line in stdout.split('\n')) {
+        line = line.trim();
+        if (line.isEmpty || line.startsWith('List of')) continue;
+        // 格式: name \t type \t ip:port
+        final parts = line.split(RegExp(r'\s+'));
+        if (parts.length < 3) continue;
+        final name = parts[0];
+        final type = parts[1];
+        final endpoint = parts[2];
+        final colon = endpoint.lastIndexOf(':');
+        if (colon <= 0) continue;
+        final host = endpoint.substring(0, colon);
+        final port = endpoint.substring(colon + 1);
+        if (host.isEmpty || port.isEmpty) continue;
+        services.add(AdbMdnsService(
+          name: name,
+          type: type,
+          host: host,
+          port: port,
+        ));
+      }
+      return services;
+    } catch (e) {
+      debugPrint('获取 mDNS 服务失败: $e');
+      return [];
+    }
+  }
+
+  /// 检查 mDNS 是否可用
+  Future<bool> isMdnsAvailable() async {
+    try {
+      var result = await _execAdb(['mdns', 'check']);
+      if (result == null) return false;
+      final out = '${result.stdout}${result.stderr}'.toLowerCase();
+      return out.contains('version') || result.exitCode == 0;
+    } catch (e) {
+      return false;
+    }
+  }
+
   /// 无线连接设备
   /// [host] 设备IP地址，[port] 连接端口
   Future<String> connectDevice(String host, String port) async {
     try {
+      await _ensureWirelessAutoConnectDisabled();
       var result = await _execAdb(['connect', '$host:$port']);
       if (result != null) {
         var stdout = result.stdout.toString().trim();
         var stderr = result.stderr.toString().trim();
         if (result.exitCode == 0 && stdout.contains('connected')) {
+          // 清掉同机 mDNS 双通道，避免列表出现两条
+          await _disconnectMdnsTwinsOf(host, keepEndpoint: '$host:$port');
           return '连接成功';
         }
         return stderr.isNotEmpty ? stderr : stdout;
@@ -364,16 +516,158 @@ class AdbService {
     }
   }
 
-  /// 断开无线设备
-  Future<String> disconnectDevice(String host, String port) async {
+  /// 断开同主机上的 mDNS 无线通道，保留指定的 ip:port
+  Future<void> _disconnectMdnsTwinsOf(
+    String host, {
+    required String keepEndpoint,
+  }) async {
     try {
-      var result = await _execAdb(['disconnect', '$host:$port']);
-      if (result != null) {
-        return result.stdout.toString().trim();
+      final serials = await _listRawConnectedSerials();
+      final mdns = await listMdnsServices();
+      final wirelessIpCount = serials
+          .where((s) => RegExp(r'^\d+\.\d+\.\d+\.\d+:\d+$').hasMatch(s))
+          .length;
+
+      for (final id in serials) {
+        if (id == keepEndpoint) continue;
+        if (!id.contains('_adb-tls-connect._tcp')) continue;
+
+        var sameHost = false;
+        for (final s in mdns) {
+          if (s.isConnect &&
+              s.host == host &&
+              (id == s.name ||
+                  id == '${s.name}._adb-tls-connect._tcp' ||
+                  id.startsWith('${s.name}.'))) {
+            sameHost = true;
+            break;
+          }
+        }
+        if (!sameHost && wirelessIpCount != 1) continue;
+        await _execAdb(['disconnect', id]);
       }
-      return '断开失败';
+    } catch (e) {
+      debugPrint('清理 mDNS 双通道失败: $e');
+    }
+  }
+
+  /// 断开无线设备
+  /// [deviceId] 可为 `ip:port` 或 mDNS 服务名（如 `xxx._adb-tls-connect._tcp`）
+  /// 会同时断开同一物理设备上的 ip:port 与 mDNS 双通道；
+  /// 配合 ADB_MDNS_AUTO_CONNECT=0，断开后不会自动重连（USB 不受影响）
+  Future<String> disconnectDevice(String deviceId) async {
+    try {
+      await _ensureWirelessAutoConnectDisabled();
+      final targets = await _relatedWirelessSerials(deviceId);
+      String lastMsg = '';
+      var anyOk = false;
+
+      for (final id in targets) {
+        var result = await _execAdb(['disconnect', id]);
+        if (result != null) {
+          final msg = result.stdout.toString().trim();
+          if (msg.isNotEmpty) lastMsg = msg;
+          if (result.exitCode == 0) anyOk = true;
+        }
+      }
+
+      if (anyOk) {
+        return lastMsg.isNotEmpty ? lastMsg : '已断开';
+      }
+      return lastMsg.isNotEmpty ? lastMsg : '断开失败';
     } catch (e) {
       return '断开异常: $e';
+    }
+  }
+
+  /// 收集与 [deviceId] 对应同一台无线设备的所有 adb 序列号
+  Future<Set<String>> _relatedWirelessSerials(String deviceId) async {
+    final targets = <String>{deviceId};
+    final connected = await _listRawConnectedSerials();
+    final mdns = await listMdnsServices();
+
+    String? host;
+    String? endpoint;
+
+    final ipPort = RegExp(r'^(\d+\.\d+\.\d+\.\d+):(\d+)$').firstMatch(deviceId);
+    if (ipPort != null) {
+      host = ipPort.group(1);
+      endpoint = deviceId;
+    } else {
+      for (final s in mdns) {
+        if (!s.isConnect) continue;
+        if (deviceId == s.name ||
+            deviceId == '${s.name}._adb-tls-connect._tcp' ||
+            deviceId.startsWith('${s.name}.')) {
+          host = s.host;
+          endpoint = s.endpoint;
+          break;
+        }
+      }
+    }
+
+    if (endpoint != null) {
+      targets.add(endpoint);
+      for (final s in mdns) {
+        if (!s.isConnect) continue;
+        if (s.endpoint != endpoint) continue;
+        targets.add(s.name);
+        targets.add('${s.name}._adb-tls-connect._tcp');
+        targets.add(s.endpoint);
+      }
+    }
+
+    if (host != null) {
+      for (final serial in connected) {
+        if (serial.startsWith('$host:')) {
+          targets.add(serial);
+        }
+      }
+      for (final s in mdns) {
+        if (s.isConnect && s.host == host) {
+          targets.add(s.name);
+          targets.add('${s.name}._adb-tls-connect._tcp');
+          targets.add(s.endpoint);
+        }
+      }
+    }
+
+    // 只断开当前确实连着的序列号（外加用户点的那条）
+    final result = <String>{deviceId};
+    for (final serial in connected) {
+      if (targets.contains(serial)) {
+        result.add(serial);
+        continue;
+      }
+      for (final t in targets) {
+        if (serial == t || serial.startsWith('$t.')) {
+          result.add(serial);
+        }
+      }
+    }
+    return result;
+  }
+
+  /// 原始 adb devices 序列号（不做 UI 去重）
+  Future<List<String>> _listRawConnectedSerials() async {
+    try {
+      var result = await _execAdb(['devices']);
+      if (result == null || result.exitCode != 0) return [];
+      final serials = <String>[];
+      for (var line in result.stdout.toString().split('\n')) {
+        line = line.trim();
+        if (line.isEmpty || line.startsWith('List of')) continue;
+        if (!line.contains('device')) continue;
+        var parts = line.split('\t');
+        if (parts.length < 2) parts = line.split(' ');
+        if (parts.isNotEmpty && parts[0].isNotEmpty) {
+          serials.add(parts[0]);
+        }
+      }
+      return serials;
+    } catch (e) {
+      debugPrint('获取原始设备序列号失败: $e');
+      return [];
     }
   }
 
@@ -393,37 +687,29 @@ class AdbService {
     return '未知';
   }
 
-  /// 获取设备品牌
-  Future<String> _getBrand(String device) async {
+  /// 一次 shell 同时取品牌和型号，减少无线设备上的往返耗时
+  Future<(String, String)> _getBrandAndModel(String device) async {
     try {
-      var result = await _execAdb(
-          ['-s', device, 'shell', 'getprop', 'ro.product.brand']);
+      var result = await _execAdb([
+        '-s',
+        device,
+        'shell',
+        'getprop ro.product.brand; getprop ro.product.model',
+      ]);
       if (result != null && result.exitCode == 0) {
-        var stdout = result.stdout.toString().trim();
-        if (stdout.isNotEmpty) {
-          return stdout;
-        }
+        final lines = result.stdout
+            .toString()
+            .split(RegExp(r'[\r\n]+'))
+            .map((e) => e.trim())
+            .where((e) => e.isNotEmpty)
+            .toList();
+        final brand = lines.isNotEmpty ? lines[0] : device;
+        final model = lines.length > 1 ? lines[1] : device;
+        return (brand, model);
       }
-      return device;
+      return (device, device);
     } catch (e) {
-      return device;
-    }
-  }
-
-  /// 获取设备型号
-  Future<String> _getModel(String device) async {
-    try {
-      var result = await _execAdb(
-          ['-s', device, 'shell', 'getprop', 'ro.product.model']);
-      if (result != null && result.exitCode == 0) {
-        var stdout = result.stdout.toString().trim();
-        if (stdout.isNotEmpty) {
-          return stdout;
-        }
-      }
-      return device;
-    } catch (e) {
-      return device;
+      return (device, device);
     }
   }
 
@@ -717,7 +1003,10 @@ class AdbService {
     if (_isRecording) return false;
 
     try {
-      _recordingShell = Shell();
+      _recordingShell = Shell(
+        environment: _adbEnvironment,
+        includeParentEnvironment: false,
+      );
       _isRecording = true;
       
       // 异步启动录屏命令，不等待结果
@@ -858,7 +1147,12 @@ class AdbService {
           '${dir.path}${Platform.pathSeparator}monkey_${selectedPackage}_$ts.log';
       _monkeyLogSink = File(_monkeyLogPath).openWrite();
 
-      _monkeyShell = Shell(stdout: _monkeyLogSink, stderr: _monkeyLogSink);
+      _monkeyShell = Shell(
+        stdout: _monkeyLogSink,
+        stderr: _monkeyLogSink,
+        environment: _adbEnvironment,
+        includeParentEnvironment: false,
+      );
       _isMonkeyRunning = true;
       _monkeyStoppedManually = false;
       _monkeyHasError = false;

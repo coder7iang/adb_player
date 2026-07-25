@@ -53,11 +53,14 @@ class MainNotifier extends StateNotifier<MainState> {
   }
 
   /// 获取设备列表
-  Future<void> getDeviceList() async {
+  /// [silent] 为 true 时不展示全局 loading（用于弹窗内刷新）
+  Future<void> getDeviceList({bool silent = false}) async {
     if (!state.isAdbAvailable) {
       return;
     }
-    state = state.copyWith(isLoading: true, loadingText: "获取设备列表中...");
+    if (!silent) {
+      state = state.copyWith(isLoading: true, loadingText: "获取设备列表中...");
+    }
     try {
       var devices = await AdbService.instance.getDeviceList();
       if (devices.isNotEmpty) {
@@ -108,10 +111,8 @@ class MainNotifier extends StateNotifier<MainState> {
     state = state.copyWith(selectedIndex: index);
   }
 
-  /// 选择设备
+  /// 选择设备：先立刻弹窗，再在弹窗内静默刷新，避免点击后卡住
   Future<void> devicesSelect(BuildContext context) async {
-    await getDeviceList();
-
     var value = await showDialog<DevicesModel>(
       context: context,
       builder: (context) => DeviceSelectionDialog(
@@ -119,8 +120,7 @@ class MainNotifier extends StateNotifier<MainState> {
         getCurrentDevices: () => state.devicesList,
         currentDevice: state.selectedDevice,
         refreshCallback: () async {
-          await getDeviceList();
-          state = state.copyWith();
+          await getDeviceList(silent: true);
         },
       ),
     );

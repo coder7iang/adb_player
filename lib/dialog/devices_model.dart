@@ -14,3 +14,23 @@ class DevicesModel extends ListFilterItem {
       id.contains('_adb-tls-connect._tcp') ||
       id.contains('_adb-tls-pairing._tcp');
 }
+
+/// ADB mDNS 发现的服务（配对 / 连接）
+class AdbMdnsService {
+  final String name;
+  final String type;
+  final String host;
+  final String port;
+
+  const AdbMdnsService({
+    required this.name,
+    required this.type,
+    required this.host,
+    required this.port,
+  });
+
+  bool get isPairing => type.contains('adb-tls-pairing');
+  bool get isConnect => type.contains('adb-tls-connect');
+
+  String get endpoint => '$host:$port';
+}

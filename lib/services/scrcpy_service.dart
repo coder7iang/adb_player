@@ -14,9 +14,16 @@ class ScrcpyService {
   String scrcpyPath = "";
 
   /// 执行系统命令
-  Future<dynamic> _exec(String executable, List<String> arguments) async {
+  Future<dynamic> _exec(
+    String executable,
+    List<String> arguments, {
+    Map<String, String>? environment,
+  }) async {
     try {
-      var shell = Shell();
+      var shell = Shell(
+        environment: environment,
+        includeParentEnvironment: environment == null,
+      );
       var result = await shell.runExecutableArguments(executable, arguments);
       return result;
     } catch (e) {
@@ -412,7 +419,22 @@ class ScrcpyService {
         return false;
       }
 
-      var result = await _exec(scrcpyPath, ['-s', deviceId]);
+      // 强制 scrcpy 使用本应用的 adb，并禁用无线 mDNS 自动重连，
+      // 避免投屏时 scrcpy 自带 adb 再拉起一条 _adb-tls-connect 通道
+      final env = <String, String>{
+        ...Platform.environment,
+        'ADB_MDNS_AUTO_CONNECT': '0',
+      };
+      final adbPath = AdbService.instance.adbPath;
+      if (adbPath.isNotEmpty) {
+        env['ADB'] = adbPath;
+      }
+
+      var result = await _exec(
+        scrcpyPath,
+        ['-s', deviceId],
+        environment: env,
+      );
       return result != null && result.exitCode == 0;
     } catch (e) {
       debugPrint('启动投屏失败: $e');
