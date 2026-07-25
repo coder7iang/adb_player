@@ -9,7 +9,7 @@ AdbPlayer 是一款基于 Flutter 的桌面端 Android 设备调试工具，面�
 ## 下载
 
 - **Windows**：https://coder7iang-1320222289.cos.ap-guangzhou.myqcloud.com/AdbPlayer/AdbPlayer-win.rar
-- **macOS**：https://coder7iang-1320222289.cos.ap-guangzhou.myqcloud.com/AdbPlayer.zip
+- **macOS**：https://coder7iang-1320222289.cos.ap-guangzhou.myqcloud.com/AdbPlayer/AdbPlayer-mac.zip
 
 > Windows 版为完整运行包（含 exe 与依赖 DLL），解压后运行 `adb_player.exe` 即可，请勿只复制单个 exe 文件。
 
