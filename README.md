@@ -1,5 +1,7 @@
 # AdbPlayer
 
+当前版本：**1.2.1**
+
 AdbPlayer 是一款基于 Flutter 的桌面端 Android 设备调试工具，面向开发与测试人员，把日常需要敲命令的 ADB 操作封装成可视化界面。支持 USB 与无线（Wi-Fi）连接，覆盖应用管理、文件管理、日志抓取、投屏、Monkey 测试等常用调试场景。
 
 支持 **macOS / Windows / Linux** 三端桌面运行。
@@ -25,7 +27,11 @@ sudo xattr -cr /Applications/AdbPlayer.app
 
 ### 设备连接
 - USB 连接自动识别已授权设备
-- 无线（Wi-Fi）配对与连接，支持通过 mDNS 服务名识别无线设备
+- 无线（Wi-Fi）连接：
+  - **二维码配对**（Android 11+）：电脑展示二维码，手机「无线调试 → 使用二维码配对」扫码后自动配对并连接
+  - **手动连接**：粘贴手机上的 `IP:端口` 即可；首次配对再填 6 位配对码，已配对设备无需重复配对
+  - 自动发现局域网可连接设备，一键连接
+  - 同机 `ip:port` 与 mDNS 双通道去重，手动断开后不会自动重连（USB 插拔仍可自动识别）
 - 多设备切换
 
 ### 常用功能
@@ -34,7 +40,7 @@ sudo xattr -cr /Applications/AdbPlayer.app
 - 录屏
 - 查看当前 Activity
 - 输入文本
-- 投屏（基于 scrcpy）
+- 投屏（基于 scrcpy，统一使用应用内 ADB，避免无线双通道干扰）
 
 ### 应用管理
 - 启动 / 停止 / 重启应用
@@ -65,12 +71,19 @@ sudo xattr -cr /Applications/AdbPlayer.app
 - 日志管理：实时抓取并过滤 logcat 日志，导出到本地
 - 系统托盘常驻，关闭窗口最小化到托盘
 
+## 更新说明（1.2.1）
+
+- 新增无线调试二维码配对
+- 简化手动无线连接表单（地址 + 可选配对码）
+- 修复无线设备断开、列表重复条目、设备选择弹窗卡顿等问题
+- 投屏改用应用内 ADB，禁用无线 mDNS 自动重连
+
 ## 技术栈
 
 - **Flutter**（Dart SDK `>=3.10.0`，Flutter `>=3.38.0`）
 - **状态管理**：flutter_riverpod / riverpod_annotation
 - **桌面集成**：window_manager、system_tray、desktop_drop、file_selector
-- **核心能力**：process_run（调用 ADB / scrcpy）、dio、archive、webview_flutter、video_player、lottie
+- **核心能力**：process_run（调用 ADB / scrcpy）、dio、archive、webview_flutter、video_player、lottie、qr_flutter
 
 ## 开发与构建
 
