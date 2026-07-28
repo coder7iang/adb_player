@@ -28,5 +28,13 @@
 	<string>MainMenu</string>
 	<key>NSPrincipalClass</key>
 	<string>NSApplication</string>
+	<!-- macOS 15+ 本地网络权限：二维码配对依赖 mDNS 发现手机 -->
+	<key>NSLocalNetworkUsageDescription</key>
+	<string>AdbPlayer 需要访问本地网络，以通过 mDNS 发现并配对无线调试设备。</string>
+	<key>NSBonjourServices</key>
+	<array>
+		<string>_adb-tls-pairing._tcp</string>
+		<string>_adb-tls-connect._tcp</string>
+	</array>
 </dict>
 </plist>

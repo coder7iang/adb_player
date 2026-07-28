@@ -2,6 +2,7 @@ import 'dart:io';
 
 import 'package:adb_player/page/main/main_page.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_smart_dialog/flutter_smart_dialog.dart';
 import 'package:system_tray/system_tray.dart';
@@ -137,6 +138,14 @@ class _MyAppState extends State<MyApp> with WindowListener {
       title: 'AdbPlayer',
       debugShowCheckedModeBanner: false,
       theme: ThemeData(primarySwatch: Colors.blue),
+      // 桌面端默认会把方向键当成「切换按钮焦点」，与摸鱼彩蛋冲突且干扰鼠标操作
+      shortcuts: {
+        ...WidgetsApp.defaultShortcuts,
+        const SingleActivator(LogicalKeyboardKey.arrowUp): DoNothingIntent(),
+        const SingleActivator(LogicalKeyboardKey.arrowDown): DoNothingIntent(),
+        const SingleActivator(LogicalKeyboardKey.arrowLeft): DoNothingIntent(),
+        const SingleActivator(LogicalKeyboardKey.arrowRight): DoNothingIntent(),
+      },
       home: const MainPage(),
       // 配置 SmartDialog
       navigatorObservers: [FlutterSmartDialog.observer],

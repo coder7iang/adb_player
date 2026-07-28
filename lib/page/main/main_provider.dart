@@ -71,10 +71,10 @@ class MainNotifier extends StateNotifier<MainState> {
           final idx = devices.indexWhere((d) => d.id == prevId);
           if (idx != -1) keep = devices[idx];
         }
+        // 只更新设备，不改 selectedIndex，避免手册等页面被踢回快捷功能
         _applySelectedDevice(
           keep ?? devices.first,
           devicesList: devices,
-          selectedIndex: 1, // 设置默认页面为 FeaturePage
           isLoading: false,
           loadingText: "",
         );
@@ -82,7 +82,6 @@ class MainNotifier extends StateNotifier<MainState> {
         _applySelectedDevice(
           null,
           devicesList: const [],
-          selectedIndex: 1, // 没有设备时也保持显示 FeaturePage
           isLoading: false,
           loadingText: "",
         );

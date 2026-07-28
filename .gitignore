@@ -45,3 +45,6 @@ app.*.map.json
 /android/app/debug
 /android/app/profile
 /android/app/release
+
+# 本地文档 / 公众号素材（不入库）
+/docs/

@@ -457,23 +457,28 @@ class AdbService {
       for (var line in stdout.split('\n')) {
         line = line.trim();
         if (line.isEmpty || line.startsWith('List of')) continue;
-        // 格式: name \t type \t ip:port
+        // 格式: name \t type \t ip:port（偶发 IPv6 时 endpoint 可能含多个冒号）
         final parts = line.split(RegExp(r'\s+'));
         if (parts.length < 3) continue;
         final name = parts[0];
         final type = parts[1];
-        final endpoint = parts[2];
+        final endpoint = parts.sublist(2).join(' ');
         final colon = endpoint.lastIndexOf(':');
         if (colon <= 0) continue;
         final host = endpoint.substring(0, colon);
         final port = endpoint.substring(colon + 1);
         if (host.isEmpty || port.isEmpty) continue;
+        // 端口必须是数字，避免误解析
+        if (int.tryParse(port) == null) continue;
         services.add(AdbMdnsService(
           name: name,
           type: type,
           host: host,
           port: port,
         ));
+      }
+      if (services.isEmpty && stdout.trim().isNotEmpty) {
+        debugPrint('mdns services 原始输出无解析结果:\n$stdout');
       }
       return services;
     } catch (e) {

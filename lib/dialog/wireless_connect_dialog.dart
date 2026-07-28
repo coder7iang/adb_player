@@ -39,6 +39,8 @@ class _WirelessConnectDialogState extends State<WirelessConnectDialog>
   bool _qrPollingInFlight = false;
   Timer? _qrPollTimer;
   bool _qrMdnsOk = true;
+  /// 开始轮询后累计空发现次数，用于超时提示
+  int _qrEmptyPolls = 0;
 
   static const _qrChars =
       'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
@@ -121,6 +123,7 @@ class _WirelessConnectDialogState extends State<WirelessConnectDialog>
     _qrContent = 'WIFI:T:ADB;S:$_qrServiceName;P:$_qrPassword;;';
     _qrBusy = false;
     _qrSuccess = false;
+    _qrEmptyPolls = 0;
     _qrStatus = _qrMdnsOk ? '等待手机扫码...' : '当前 ADB 的 mDNS 不可用，请改用「手动连接」';
   }
 
@@ -133,6 +136,7 @@ class _WirelessConnectDialogState extends State<WirelessConnectDialog>
   void _startQrPolling() {
     _stopQrPolling();
     if (!_qrMdnsOk) return;
+    _qrEmptyPolls = 0;
     _qrPollTimer = Timer.periodic(const Duration(seconds: 1), (_) {
       _pollQrPairing();
     });
@@ -168,7 +172,27 @@ class _WirelessConnectDialogState extends State<WirelessConnectDialog>
         break;
       }
     }
-    if (pairing == null) return;
+    if (pairing == null) {
+      _qrEmptyPolls++;
+      // 约 20s 仍无目标配对服务：给出可操作提示（避免一直停在「等待手机扫码」）
+      if (_qrEmptyPolls == 20 || (_qrEmptyPolls > 20 && _qrEmptyPolls % 30 == 0)) {
+        final pairingCount = services.where((s) => s.isPairing).length;
+        final connectCount = services.where((s) => s.isConnect).length;
+        debugPrint(
+          'QR 配对仍在等待: 目标=$_qrServiceName, '
+          'mdns pairing=$pairingCount connect=$connectCount, '
+          '全部=${services.map((s) => '${s.name}/${s.type}@${s.endpoint}').join(', ')}',
+        );
+        if (!mounted || _qrBusy || _qrSuccess) return;
+        setState(() {
+          _qrStatus = pairingCount == 0 && connectCount == 0
+              ? '未发现任何无线调试服务。请确认手机已打开「使用二维码配对」、与电脑同一 Wi‑Fi，并在「系统设置 → 隐私与安全性 → 本地网络」允许 AdbPlayer'
+              : '已发现其他设备服务，但未匹配本二维码（$_qrServiceName）。请重新扫当前二维码，或点刷新生成新码';
+        });
+      }
+      return;
+    }
+    _qrEmptyPolls = 0;
 
     final pairingHost = pairing.host;
     final pairingPort = pairing.port;

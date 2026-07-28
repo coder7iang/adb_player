@@ -1,6 +1,7 @@
 import 'dart:io';
 
 import 'package:adb_player/page/about/about_page.dart';
+import 'package:adb_player/page/handbook/handbook_page.dart';
 import 'package:adb_player/page/log/android_log_page.dart';
 import 'package:adb_player/page/feature/feature_page.dart';
 import 'package:adb_player/page/flie/file_manager_page.dart';
@@ -9,6 +10,7 @@ import 'package:adb_player/page/main/main_state.dart';
 import 'package:adb_player/page/play/play_page.dart';
 import 'package:adb_player/page/setting/setting_page.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_svg/svg.dart';
 import 'package:window_manager/window_manager.dart';
@@ -21,13 +23,69 @@ class MainPage extends ConsumerStatefulWidget {
 }
 
 class _MainPageState extends ConsumerState<MainPage> {
+  /// 隐蔽入口：↑↑↓↓←←→→
+  static const _joyKonami = <LogicalKeyboardKey>[
+    LogicalKeyboardKey.arrowUp,
+    LogicalKeyboardKey.arrowUp,
+    LogicalKeyboardKey.arrowDown,
+    LogicalKeyboardKey.arrowDown,
+    LogicalKeyboardKey.arrowLeft,
+    LogicalKeyboardKey.arrowLeft,
+    LogicalKeyboardKey.arrowRight,
+    LogicalKeyboardKey.arrowRight,
+  ];
+
+  int _joySeqIndex = 0;
+  DateTime? _joyLastKeyAt;
+
   @override
   void initState() {
     super.initState();
+    HardwareKeyboard.instance.addHandler(_onJoyKonamiKey);
     // 初始化主页面
     WidgetsBinding.instance.addPostFrameCallback((_) {
       ref.read(mainProvider.notifier).init();
     });
+  }
+
+  @override
+  void dispose() {
+    HardwareKeyboard.instance.removeHandler(_onJoyKonamiKey);
+    super.dispose();
+  }
+
+  bool _onJoyKonamiKey(KeyEvent event) {
+    if (event is! KeyDownEvent) return false;
+
+    final key = event.logicalKey;
+    final isArrow = key == LogicalKeyboardKey.arrowUp ||
+        key == LogicalKeyboardKey.arrowDown ||
+        key == LogicalKeyboardKey.arrowLeft ||
+        key == LogicalKeyboardKey.arrowRight;
+    if (!isArrow) {
+      _joySeqIndex = 0;
+      return false;
+    }
+
+    final now = DateTime.now();
+    // 按键间隔过长则从头来
+    if (_joyLastKeyAt != null &&
+        now.difference(_joyLastKeyAt!) > const Duration(seconds: 3)) {
+      _joySeqIndex = 0;
+    }
+    _joyLastKeyAt = now;
+
+    if (key == _joyKonami[_joySeqIndex]) {
+      _joySeqIndex++;
+      if (_joySeqIndex >= _joyKonami.length) {
+        _joySeqIndex = 0;
+        ref.read(mainProvider.notifier).selectPage(5);
+      }
+    } else {
+      // 错键时：若正好是序列开头则从 1 继续，否则清零
+      _joySeqIndex = key == _joyKonami[0] ? 1 : 0;
+    }
+    return false;
   }
 
   @override
@@ -65,7 +123,7 @@ class _MainPageState extends ConsumerState<MainPage> {
                       _leftItem("images/ic_settings.svg", "设置页面", 4, mainState, mainNotifier),
                       _leftItem("images/ic_about.svg", "关于页面", 6, mainState, mainNotifier),
                       const Spacer(),
-                      _buildJoyEntry(mainNotifier),
+                      _buildHandbookEntry(mainState, mainNotifier),
                       const SizedBox(height: 16),
                     ],
                   ),
@@ -151,6 +209,8 @@ class _MainPageState extends ConsumerState<MainPage> {
       return const PlayPage();
     } else if (value == 6) {
       return const AboutPage();
+    } else if (value == 7) {
+      return const HandbookPage();
     } else {
       return Container();
     }
@@ -231,43 +291,46 @@ class _MainPageState extends ConsumerState<MainPage> {
         ),
       ),
     );
-  }  Widget _buildJoyEntry(MainNotifier notifier) {
+  }
+
+  /// 侧边栏左下：安卓开发者手册入口
+  Widget _buildHandbookEntry(MainState state, MainNotifier notifier) {
+    final selected = state.selectedIndex == 7;
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 15),
       child: Material(
         color: Colors.transparent,
         child: InkWell(
-          borderRadius: BorderRadius.circular(14),
-          onTap: () => notifier.selectPage(5),
+          borderRadius: BorderRadius.circular(10),
+          onTap: () => notifier.selectPage(7),
           child: Container(
-            padding: const EdgeInsets.all(12),
+            padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 12),
             decoration: BoxDecoration(
-              color: const Color(0xFFFFF7FB),
-              borderRadius: BorderRadius.circular(14),
-              border: Border.all(color: const Color(0xFFFBCFE8)),
-              boxShadow: [
-                BoxShadow(
-                  color: const Color(0xFFDB2777).withValues(alpha: 0.08),
-                  blurRadius: 10,
-                  offset: const Offset(0, 2),
-                ),
-              ],
+              borderRadius: BorderRadius.circular(10),
+              color: selected
+                  ? const Color(0xFF2563EB).withValues(alpha: 0.12)
+                  : const Color(0xFFF8FAFC),
+              border: Border.all(
+                color: selected
+                    ? const Color(0xFFBFDBFE)
+                    : const Color(0xFFE2E8F0),
+              ),
             ),
             child: Row(
               children: [
                 Container(
-                  width: 34,
-                  height: 34,
+                  width: 30,
+                  height: 30,
                   alignment: Alignment.center,
                   decoration: BoxDecoration(
                     color: Colors.white,
-                    borderRadius: BorderRadius.circular(10),
-                    border: Border.all(color: const Color(0xFFFBCFE8)),
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: const Color(0xFFDBEAFE)),
                   ),
                   child: const Icon(
-                    Icons.auto_awesome,
-                    size: 18,
-                    color: Color(0xFFDB2777),
+                    Icons.menu_book_rounded,
+                    size: 16,
+                    color: Color(0xFF2563EB),
                   ),
                 ),
                 const SizedBox(width: 10),
@@ -277,29 +340,30 @@ class _MainPageState extends ConsumerState<MainPage> {
                     mainAxisSize: MainAxisSize.min,
                     children: [
                       Text(
-                        '趣味玩一玩',
+                        '开发者手册',
                         style: TextStyle(
-                          color: Color(0xFF9D174D),
+                          color: Color(0xFF1E3A8A),
                           fontSize: 13,
                           fontWeight: FontWeight.w600,
                         ),
                       ),
                       SizedBox(height: 2),
                       Text(
-                        '摸鱼专属小工具',
-                        overflow: TextOverflow.ellipsis,
+                        'ADB 命令速查',
                         style: TextStyle(
-                          color: Color(0xFFBE185D),
+                          color: Color(0xFF64748B),
                           fontSize: 11,
                         ),
                       ),
                     ],
                   ),
                 ),
-                const Icon(
+                Icon(
                   Icons.chevron_right,
                   size: 14,
-                  color: Color(0xFFDB2777),
+                  color: selected
+                      ? const Color(0xFF2563EB)
+                      : const Color(0xFF94A3B8),
                 ),
               ],
             ),
