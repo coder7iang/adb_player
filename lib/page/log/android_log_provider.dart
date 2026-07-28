@@ -68,10 +68,14 @@ class AndroidLogNotifier extends StateNotifier<AndroidLogState> {
     state = state.copyWith(adbPath: path);
   }
   
-  static const String colorLogKey = 'colorLog';
   static const String caseSensitiveKey = 'caseSensitive';
   
   Process? _process;
+  int _logSession = 0; // 用于忽略已废弃进程的 exitCode 回调
+  int _followGen = 0; // 取消跟随时作废已排队的滚底回调
+  bool _startingListener = false;
+  bool _initialized = false;
+  String _lineBuffer = ''; // stdout 跨 chunk 的半截行缓冲
   final List<String> _pendingLogs = [];  // 待更新的日志缓冲区
   final List<String> _allLogs = [];  // 全量日志缓冲区
   Timer? _updateTimer;  // 用于批量更新的定时器
@@ -86,7 +90,6 @@ class AndroidLogNotifier extends StateNotifier<AndroidLogState> {
     findController = TextEditingController();
     scrollController = FlutterListViewController();
     
-    
     // 启动批量更新定时器（每200ms更新一次）
     _startBatchUpdateTimer();
     
@@ -98,13 +101,14 @@ class AndroidLogNotifier extends StateNotifier<AndroidLogState> {
         }
       }
     });
-    
-    // 初始化时加载设置并开始监听日志
-    _loadSettings();
-    _initLogging();
   }
-  
 
+  /// 清空内存中的日志缓冲
+  void _clearLogBuffers() {
+    _pendingLogs.clear();
+    _allLogs.clear();
+    _lineBuffer = '';
+  }
   
   /// 启动批量更新定时器
   void _startBatchUpdateTimer() {
@@ -118,35 +122,60 @@ class AndroidLogNotifier extends StateNotifier<AndroidLogState> {
   /// 批量更新日志到状态
   void _flushPendingLogs() {
     if (_pendingLogs.isEmpty) return;
-    
-    // 先添加到全量日志缓冲区
+
+    // 先写入全量缓冲（供重新开启跟随时同步）
     _allLogs.addAll(_pendingLogs);
-    
-    // 限制全量日志数量，避免内存溢出
     if (_allLogs.length > 1000) {
       _allLogs.removeRange(0, _allLogs.length - 1000);
     }
-    
-    // 根据筛选状态生成视图日志
-    List<String> viewLogs;
-    if (state.filterContent.isEmpty) {
-      // 无筛选时，显示全量日志
-      viewLogs = List.from(_allLogs);
-    } else {
-      // 有筛选时，从全量日志中筛选
-      final filterText = state.isCaseSensitive ? state.filterContent : state.filterContent.toLowerCase();
-      viewLogs = _allLogs.where((log) {
-        final text = state.isCaseSensitive ? log : log.toLowerCase();
-        return text.contains(filterText);
-      }).toList();
+
+    if (state.isShowLast) {
+      // 跟随：显示全量窗口并滚到底
+      state = state.copyWith(logList: _buildViewLogsFromAll());
+      _pendingLogs.clear();
+      final gen = _followGen;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted || !state.isShowLast || gen != _followGen) return;
+        try {
+          scrollController.jumpTo(scrollController.position.maxScrollExtent);
+        } catch (_) {}
+      });
+      return;
     }
-    
-    state = state.copyWith(logList: viewLogs);
+
+    // 未跟随：只追加本批日志，不从头部滑动窗口，避免看起来像自动滚动
+    final added = _filterLogs(_pendingLogs);
     _pendingLogs.clear();
+    if (added.isEmpty) return;
+
+    var next = [...state.logList, ...added];
+    // 软上限，防止关跟随后内存无限涨
+    if (next.length > 5000) {
+      next = next.sublist(next.length - 5000);
+    }
+    state = state.copyWith(logList: next);
+  }
+
+  /// 从全量缓冲生成当前筛选视图
+  List<String> _buildViewLogsFromAll() => _filterLogs(_allLogs);
+
+  List<String> _filterLogs(List<String> source) {
+    if (state.filterContent.isEmpty) {
+      return List<String>.from(source);
+    }
+    final filterText = state.isCaseSensitive
+        ? state.filterContent
+        : state.filterContent.toLowerCase();
+    return source.where((log) {
+      final text = state.isCaseSensitive ? log : log.toLowerCase();
+      return text.contains(filterText);
+    }).toList();
   }
   
-  /// 初始化
+  /// 初始化（仅由页面调用一次，避免构造函数与 init 双跑）
   Future<void> init() async {
+    if (_initialized) return;
+    _initialized = true;
     await _loadSettings();
     await _initLogging();
   }
@@ -166,9 +195,11 @@ class AndroidLogNotifier extends StateNotifier<AndroidLogState> {
     });
     
     if (selectedPackage != null) {
+      _clearLogBuffers();
       state = state.copyWith(
         packageName: selectedPackage.itemTitle,
-        logList: [],  // 清除现有日志
+        logList: [],
+        findIndex: -1,
       );
       
       bool pidSuccess = await _getPid();
@@ -180,10 +211,12 @@ class AndroidLogNotifier extends StateNotifier<AndroidLogState> {
         );
         
         // 恢复到无选中状态
+        _clearLogBuffers();
         state = state.copyWith(
           packageName: "",
           pid: "",
           logList: [],
+          findIndex: -1,
         );
         _restartLogListener();
       } else {
@@ -195,10 +228,12 @@ class AndroidLogNotifier extends StateNotifier<AndroidLogState> {
   
   /// 清除包名筛选
   void clearPackageName() {
+    _clearLogBuffers();
     state = state.copyWith(
       packageName: "",
       pid: "",
-      logList: [],  // 清除现有日志
+      logList: [],
+      findIndex: -1,
     );
     _restartLogListener();  // 重启监听器显示所有日志
   }
@@ -277,8 +312,10 @@ class AndroidLogNotifier extends StateNotifier<AndroidLogState> {
       if (result != null && result.exitCode == 0) {
         String output = result.stdout.toString().trim();
         if (output.isNotEmpty) {
-          debugPrint('获取到 PID: $output (包名: ${state.packageName})');
-          state = state.copyWith(pid: output);
+          // pidof 可能返回多个 PID，只取第一个
+          final pid = output.split(RegExp(r'\s+')).first;
+          debugPrint('获取到 PID: $pid (原始: $output, 包名: ${state.packageName})');
+          state = state.copyWith(pid: pid);
           return true;
         } else {
           debugPrint('PID 为空，应用可能未运行 (包名: ${state.packageName})');
@@ -315,9 +352,14 @@ class AndroidLogNotifier extends StateNotifier<AndroidLogState> {
   
   /// 开始监听日志
   Future<void> _startLogListener() async {
-    if (state.isLogging) return;
-    
-    state = state.copyWith(isLogging: true);
+    if (state.isLogging || _startingListener) return;
+    if (adbPath == null || adbPath!.isEmpty) {
+      state = state.copyWith(errorMessage: "ADB没有找到，请配置ADB环境变量");
+      return;
+    }
+
+    _startingListener = true;
+    final session = ++_logSession;
     
     try {
       List<String> args = [
@@ -334,51 +376,65 @@ class AndroidLogNotifier extends StateNotifier<AndroidLogState> {
       }
       
       // 打印完整的命令行
-      String command = '${adbPath ?? 'adb'} ${args.join(' ')}';
+      String command = '$adbPath ${args.join(' ')}';
       debugPrint('执行 ADB 命令: $command');
       
-      _process = await Process.start(adbPath ?? 'adb', args);
+      final process = await Process.start(adbPath!, args);
+      // 启动期间若已重启/停止，丢弃本次进程
+      if (session != _logSession) {
+        process.kill();
+        return;
+      }
+
+      _process = process;
+      state = state.copyWith(isLogging: true);
       
-      _process!.stdout.transform(utf8.decoder).listen((data) {
+      process.stdout.transform(utf8.decoder).listen((data) {
+        if (session != _logSession) return;
         _processLogData(data);
       });
       
-      _process!.stderr.transform(utf8.decoder).listen((data) {
+      process.stderr.transform(utf8.decoder).listen((data) {
         // 处理错误输出
       });
       
-      _process!.exitCode.then((code) {
+      process.exitCode.then((code) {
+        // 忽略已废弃会话，避免旧进程把新监听标成已停止
+        if (session != _logSession) return;
+        if (!identical(_process, process)) return;
+        _process = null;
         state = state.copyWith(isLogging: false);
       });
       
     } catch (e) {
-      state = state.copyWith(
-        isLogging: false,
-        errorMessage: "启动日志监听失败: $e",
-      );
+      if (session == _logSession) {
+        state = state.copyWith(
+          isLogging: false,
+          errorMessage: "启动日志监听失败: $e",
+        );
+      }
+    } finally {
+      _startingListener = false;
     }
   }
   
-  /// 处理日志数据
+  /// 处理日志数据（保留跨 chunk 的半截行）
   void _processLogData(String data) {
-    List<String> lines = data.split('\n');
+    _lineBuffer += data;
+    final lines = _lineBuffer.split('\n');
+    _lineBuffer = lines.removeLast();
     
     for (var line in lines) {
       if (line.trim().isEmpty) continue;
-      
-      // 不再在接收时过滤，所有日志都进入缓冲区
-      // 筛选逻辑移到 _flushPendingLogs 中处理
       _pendingLogs.add(line);
     }
-    
-    // 不再立即更新状态，而是添加到缓冲区，由定时器批量更新
   }
   
   /// 设置包名
   void setPackageName(String packageName) {
-    state = state.copyWith(packageName: packageName);
-    _getPid();
-    _restartLogListener();
+    _clearLogBuffers();
+    state = state.copyWith(packageName: packageName, logList: [], findIndex: -1);
+    _getPid().then((_) => _restartLogListener());
   }
   
   /// 设置筛选内容
@@ -410,20 +466,26 @@ class AndroidLogNotifier extends StateNotifier<AndroidLogState> {
   
 
   
-  /// 滚动到底部
-  void scrollToBottom() {
-    // 启用自动滚动到底部
-    
-    // 启用自动跟随最新日志
-    state = state.copyWith(isShowLast: true);
-    
-    // 立即滚动到底部
+  /// 切换「滚到底部 / 跟随最新」：选中则跟随，取消则停止
+  void toggleScrollToBottom() {
+    final enable = !state.isShowLast;
+    if (!enable) {
+      _followGen++; // 作废已排队的滚底回调
+      state = state.copyWith(isShowLast: false);
+      return;
+    }
+
+    // 开启跟随时同步到最新全量视图
+    state = state.copyWith(
+      isShowLast: true,
+      logList: _buildViewLogsFromAll(),
+    );
+
     try {
       scrollController.jumpTo(
         scrollController.position.maxScrollExtent,
       );
     } catch (e) {
-      // 如果滚动失败，尝试稍后再试
       Future.delayed(const Duration(milliseconds: 100), () {
         try {
           scrollController.jumpTo(
@@ -438,20 +500,7 @@ class AndroidLogNotifier extends StateNotifier<AndroidLogState> {
   
   /// 应用筛选
   void _applyFilter() {
-    if (state.filterContent.isEmpty) {
-      // 清空筛选时，还原全量日志
-      state = state.copyWith(logList: List.from(_allLogs));
-      return;
-    }
-    
-    // 有筛选时，从全量日志中筛选
-    final filterText = state.isCaseSensitive ? state.filterContent : state.filterContent.toLowerCase();
-    final filteredLogs = _allLogs.where((log) {
-      final logText = state.isCaseSensitive ? log : log.toLowerCase();
-      return logText.contains(filterText);
-    }).toList();
-    
-    state = state.copyWith(logList: filteredLogs);
+    state = state.copyWith(logList: _buildViewLogsFromAll());
   }
   
   /// 查找下一个
@@ -546,16 +595,19 @@ class AndroidLogNotifier extends StateNotifier<AndroidLogState> {
     Clipboard.setData(ClipboardData(text: log));
   }
   
-  /// 清除日志
-  void clearLog() {
+  /// 清除日志（内存缓冲 + 设备 logcat）
+  Future<void> clearLog() async {
+    _clearLogBuffers();
     state = state.copyWith(
       logList: [],
       findIndex: -1,
     );
+    await _clearLog();
   }
   
   /// 停止日志监听
   void stopLogListener() {
+    _logSession++; // 使旧进程的 stdout / exitCode 回调失效
     if (_process != null) {
       _process!.kill();
       _process = null;
@@ -566,6 +618,9 @@ class AndroidLogNotifier extends StateNotifier<AndroidLogState> {
   /// 重启日志监听
   void _restartLogListener() {
     stopLogListener();
+    _clearLogBuffers();
+    _lineBuffer = '';
+    state = state.copyWith(logList: [], findIndex: -1);
     _startLogListener();
   }
   
@@ -581,9 +636,11 @@ class AndroidLogNotifier extends StateNotifier<AndroidLogState> {
   
   @override
   void dispose() {
-    _updateTimer?.cancel();  // 取消定时器
-    _pendingLogs.clear();  // 清空缓冲区
-    stopLogListener();
+    _logSession++; // 使进行中的回调失效
+    _updateTimer?.cancel();
+    _clearLogBuffers();
+    _process?.kill();
+    _process = null;
     filterController.dispose();
     findController.dispose();
     scrollController.dispose();

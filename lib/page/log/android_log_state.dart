@@ -29,7 +29,7 @@ class AndroidLogState {
     this.selectedFilterLevel = "*:V",
     this.isFilterPackage = false,
     this.isCaseSensitive = false,
-    this.isShowLast = true,
+    this.isShowLast = false,
     this.pid = "",
     this.findIndex = -1,
     this.isLoading = false,

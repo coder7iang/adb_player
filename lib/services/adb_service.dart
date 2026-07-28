@@ -28,20 +28,25 @@ class AdbService {
   /// 防止并发重复下载 ADB
   static Future<String>? _downloadingAdb;
 
-  /// 是否已用 ADB_MDNS_AUTO_CONNECT=0 重启过 server（禁用无线自动重连）
+  /// 是否已因「手动断开无线」禁用过 mDNS 自动重连
   bool _wirelessAutoConnectDisabled = false;
 
-  /// ADB 进程环境：禁用 mDNS 无线自动连接，USB 插拔仍可正常识别
-  Map<String, String> get _adbEnvironment => {
-        ...Platform.environment,
-        'ADB_MDNS_AUTO_CONNECT': '0',
-      };
+  /// 供外部（如 scrcpy）判断：仅手动断开后才应带上禁用自动连接的环境变量
+  bool get isWirelessAutoConnectDisabled => _wirelessAutoConnectDisabled;
+
+  /// ADB 进程环境：手动断开后才写入 ADB_MDNS_AUTO_CONNECT=0
+  Map<String, String> get _adbEnvironment {
+    final env = Map<String, String>.from(Platform.environment);
+    if (_wirelessAutoConnectDisabled) {
+      env['ADB_MDNS_AUTO_CONNECT'] = '0';
+    }
+    return env;
+  }
 
   /// 设置 ADB 路径
   Future<void> setAdbPath(String path) async {
     adbPath = path;
     await App().setAdbPath(path);
-    await _ensureWirelessAutoConnectDisabled();
   }
 
   /// 获取 ADB 路径
@@ -176,16 +181,19 @@ class AdbService {
     }
   }
 
-  /// 重启 adb server 并禁用无线 mDNS 自动连接（手动断开后不会再连上）
-  /// USB 设备不受影响，插上仍会自动出现在设备列表
+  /// 重启 adb server 并禁用无线 mDNS 自动连接
+  /// 仅应在「手动断开无线」时调用；USB 插拔识别不受影响
   Future<void> _ensureWirelessAutoConnectDisabled() async {
     if (_wirelessAutoConnectDisabled || adbPath.isEmpty) return;
     try {
+      // 先标记，保证随后 start-server / disconnect 都带上环境变量
+      _wirelessAutoConnectDisabled = true;
       await _execAdb(['kill-server']);
       await _execAdb(['start-server']);
-      _wirelessAutoConnectDisabled = true;
       debugPrint('已禁用 ADB 无线自动连接 (ADB_MDNS_AUTO_CONNECT=0)');
     } catch (e) {
+      // 失败则回滚标记，避免后续误以为已禁用
+      _wirelessAutoConnectDisabled = false;
       debugPrint('禁用无线自动连接失败: $e');
     }
   }
@@ -195,7 +203,7 @@ class AdbService {
     bool hasAdb = await _getAdbPath();
     if (hasAdb) {
       debugPrint('使用已缓存的 ADB: $adbPath');
-      await _ensureWirelessAutoConnectDisabled();
+      // 启动不再 kill-server，避免拖慢 USB / 已有设备枚举
       return;
     }
     var executable = Platform.isWindows ? "where" : "which";
@@ -503,7 +511,7 @@ class AdbService {
   /// [host] 设备IP地址，[port] 连接端口
   Future<String> connectDevice(String host, String port) async {
     try {
-      await _ensureWirelessAutoConnectDisabled();
+      // 主动连接不禁用自动重连；未手动断开前，自动连回是允许的
       var result = await _execAdb(['connect', '$host:$port']);
       if (result != null) {
         var stdout = result.stdout.toString().trim();
@@ -559,9 +567,10 @@ class AdbService {
   /// 断开无线设备
   /// [deviceId] 可为 `ip:port` 或 mDNS 服务名（如 `xxx._adb-tls-connect._tcp`）
   /// 会同时断开同一物理设备上的 ip:port 与 mDNS 双通道；
-  /// 配合 ADB_MDNS_AUTO_CONNECT=0，断开后不会自动重连（USB 不受影响）
+  /// 手动断开时禁用 mDNS 自动重连，之后不会自动连回（USB 不受影响）
   Future<String> disconnectDevice(String deviceId) async {
     try {
+      // 仅手动断开时禁用自动重连（会重启一次 adb server）
       await _ensureWirelessAutoConnectDisabled();
       final targets = await _relatedWirelessSerials(deviceId);
       String lastMsg = '';

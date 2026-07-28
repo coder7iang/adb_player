@@ -199,17 +199,21 @@ class _AndroidLogPageState extends ConsumerState<AndroidLogPage> {
                   child: const Icon(Icons.delete_outline, size: 22),
                 ),
                 const SizedBox(height: 12),
-                // 滚动到底部按钮
+                // 滚到底部 / 跟随最新（选中跟随，取消停止）
                 FloatingActionButton(
                   heroTag: 'scroll_bottom',
                   mini: true,
-                  backgroundColor: Colors.white,
-                  foregroundColor: const Color(0xFF666666),
+                  backgroundColor: logState.isShowLast
+                      ? const Color(0xFF2563EB)
+                      : Colors.white,
+                  foregroundColor: logState.isShowLast
+                      ? Colors.white
+                      : const Color(0xFF666666),
                   elevation: 3,
                   onPressed: () {
-                    logNotifier.scrollToBottom();
+                    logNotifier.toggleScrollToBottom();
                   },
-                  tooltip: '滚动到底部',
+                  tooltip: logState.isShowLast ? '取消跟随底部' : '跟随滚到底部',
                   child: const Icon(Icons.vertical_align_bottom, size: 22),
                 ),
               ],

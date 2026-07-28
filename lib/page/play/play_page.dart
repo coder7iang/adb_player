@@ -51,7 +51,10 @@ class _PlayPageState extends State<PlayPage> {
       body = _buildPlayCards();
     }
     return Container(
-      color: Colors.white,
+      color: Colors.transparent,
+      width: double.infinity,
+      height: double.infinity,
+      alignment: Alignment.topLeft,
       child: Padding(
         padding: const EdgeInsets.all(20.0),
         child: body,

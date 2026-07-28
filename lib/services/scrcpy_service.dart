@@ -419,12 +419,13 @@ class ScrcpyService {
         return false;
       }
 
-      // 强制 scrcpy 使用本应用的 adb，并禁用无线 mDNS 自动重连，
-      // 避免投屏时 scrcpy 自带 adb 再拉起一条 _adb-tls-connect 通道
+      // 强制 scrcpy 使用本应用的 adb；仅在已手动断开无线后才禁用 mDNS 自动重连
       final env = <String, String>{
         ...Platform.environment,
-        'ADB_MDNS_AUTO_CONNECT': '0',
       };
+      if (AdbService.instance.isWirelessAutoConnectDisabled) {
+        env['ADB_MDNS_AUTO_CONNECT'] = '0';
+      }
       final adbPath = AdbService.instance.adbPath;
       if (adbPath.isNotEmpty) {
         env['ADB'] = adbPath;

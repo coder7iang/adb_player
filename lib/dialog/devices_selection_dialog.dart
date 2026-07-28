@@ -1,5 +1,6 @@
 import 'package:adb_player/dialog/devices_model.dart';
 import 'package:adb_player/dialog/devices_selection_provider.dart';
+import 'package:adb_player/dialog/smart_dialog_utils.dart';
 import 'package:adb_player/dialog/wireless_connect_dialog.dart';
 import 'package:adb_player/services/adb_service.dart';
 import 'package:flutter/material.dart';
@@ -216,14 +217,27 @@ class _DeviceSelectionDialogState extends ConsumerState<DeviceSelectionDialog> {
                                     tooltip: '断开无线连接',
                                     color: Colors.red[400],
                                     onPressed: () async {
-                                      await AdbService.instance
-                                          .disconnectDevice(device.id);
-                                      if (widget.refreshCallback != null) {
-                                        widget.refreshCallback!();
-                                        await Future.delayed(
-                                            const Duration(milliseconds: 500));
-                                        final newDevices = widget.getCurrentDevices();
-                                        notifier.refreshDevices(newDevices);
+                                      SmartDialogUtils.showLoading('正在断开...');
+                                      String msg = '';
+                                      try {
+                                        msg = await AdbService.instance
+                                            .disconnectDevice(device.id);
+                                        if (widget.refreshCallback != null) {
+                                          await widget.refreshCallback!();
+                                          if (!mounted) return;
+                                          final newDevices =
+                                              widget.getCurrentDevices();
+                                          notifier.refreshDevices(newDevices);
+                                        }
+                                      } finally {
+                                        SmartDialogUtils.hideLoading();
+                                      }
+                                      if (!mounted) return;
+                                      if (msg.contains('失败') ||
+                                          msg.contains('异常')) {
+                                        SmartDialogUtils.showError(msg);
+                                      } else if (msg.isNotEmpty) {
+                                        SmartDialogUtils.showSuccess(msg);
                                       }
                                     },
                                   )
