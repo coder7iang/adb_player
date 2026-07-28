@@ -1,6 +1,7 @@
 import 'dart:io';
 
 import 'package:adb_player/page/about/about_page.dart';
+import 'package:adb_player/page/feature/feature_background.dart';
 import 'package:adb_player/page/handbook/handbook_page.dart';
 import 'package:adb_player/page/log/android_log_page.dart';
 import 'package:adb_player/page/feature/feature_page.dart';
@@ -93,56 +94,65 @@ class _MainPageState extends ConsumerState<MainPage> {
     final mainState = ref.watch(mainProvider);
     final mainNotifier = ref.read(mainProvider.notifier);
 
-    return Container(
-      color: Colors.white,
-      child: Column(
-        children: [
-          _buildTitleBar(mainState),
-          Expanded(
-            child: Row(
-              children: <Widget>[
-                Container(
-                  width: 200,
-                  decoration: BoxDecoration(
-                    color: Colors.white,
-                    border: Border(
-                      right: BorderSide(color: Colors.black.withValues(alpha: 0.06)),
+    return Stack(
+      fit: StackFit.expand,
+      children: [
+        const FeatureBackground(),
+        Column(
+          children: [
+            _buildTitleBar(mainState),
+            Expanded(
+              child: Row(
+                children: <Widget>[
+                  Container(
+                    width: 200,
+                    decoration: BoxDecoration(
+                      color: Colors.white.withValues(alpha: 0.3),
+                      border: Border(
+                        right: BorderSide(
+                          color: Colors.black.withValues(alpha: 0.06),
+                        ),
+                      ),
+                    ),
+                    child: Column(
+                      children: [
+                        const SizedBox(height: 20),
+                        Image.asset("images/app_icon.png", width: 50, height: 50),
+                        const SizedBox(height: 4),
+                        devicesView(mainState, mainNotifier),
+                        const SizedBox(height: 20),
+                        _leftItem("images/ic_feature.svg", "快捷功能", 1, mainState,
+                            mainNotifier),
+                        _leftItem("images/ic_folder.svg", "文件管理", 2, mainState,
+                            mainNotifier),
+                        _leftItem("images/ic_log.svg", "日志管理", 3, mainState,
+                            mainNotifier),
+                        _leftItem("images/ic_settings.svg", "设置页面", 4, mainState,
+                            mainNotifier),
+                        _leftItem("images/ic_about.svg", "关于页面", 6, mainState,
+                            mainNotifier),
+                        const Spacer(),
+                        _buildHandbookEntry(mainState, mainNotifier),
+                        const SizedBox(height: 16),
+                      ],
                     ),
                   ),
-                  child: Column(
-                    children: [
-                      const SizedBox(height: 20),
-                      Image.asset("images/app_icon.png", width: 50, height: 50),
-                      const SizedBox(height: 4),
-                      devicesView(mainState, mainNotifier),
-                      const SizedBox(height: 20),
-                      _leftItem("images/ic_feature.svg", "快捷功能", 1, mainState,
-                          mainNotifier),
-                      _leftItem("images/ic_folder.svg", "文件管理", 2, mainState, mainNotifier),
-                      _leftItem("images/ic_log.svg", "日志管理", 3, mainState, mainNotifier),
-                      _leftItem("images/ic_settings.svg", "设置页面", 4, mainState, mainNotifier),
-                      _leftItem("images/ic_about.svg", "关于页面", 6, mainState, mainNotifier),
-                      const Spacer(),
-                      _buildHandbookEntry(mainState, mainNotifier),
-                      const SizedBox(height: 16),
-                    ],
-                  ),
-                ),
-                Expanded(
-                  child: Column(
-                    children: [
-                      Expanded(
-                        child: buildContent(mainState.selectedIndex,
-                            mainState.deviceId, mainState.adbPath),
+                  Expanded(
+                    child: ColoredBox(
+                      color: Colors.white.withValues(alpha: 0),
+                      child: buildContent(
+                        mainState.selectedIndex,
+                        mainState.deviceId,
+                        mainState.adbPath,
                       ),
-                    ],
+                    ),
                   ),
-                ),
-              ],
+                ],
+              ),
             ),
-          ),
-        ],
-      ),
+          ],
+        ),
+      ],
     );
   }
 
@@ -155,7 +165,7 @@ class _MainPageState extends ConsumerState<MainPage> {
       child: Container(
         height: 40,
         decoration: BoxDecoration(
-          color: Colors.white,
+          color: Colors.white.withValues(alpha: 0.3),
           border: Border(
             bottom: BorderSide(color: Colors.black.withValues(alpha: 0.06)),
           ),
@@ -293,7 +303,7 @@ class _MainPageState extends ConsumerState<MainPage> {
     );
   }
 
-  /// 侧边栏左下：安卓开发者手册入口
+  /// 侧边栏左下：ADB 命令速查入口
   Widget _buildHandbookEntry(MainState state, MainNotifier notifier) {
     final selected = state.selectedIndex == 7;
     return Padding(
@@ -308,8 +318,8 @@ class _MainPageState extends ConsumerState<MainPage> {
             decoration: BoxDecoration(
               borderRadius: BorderRadius.circular(10),
               color: selected
-                  ? const Color(0xFF2563EB).withValues(alpha: 0.12)
-                  : const Color(0xFFF8FAFC),
+                  ? const Color(0xFF2563EB).withValues(alpha: 0.18)
+                  : Colors.white.withValues(alpha: 0.3),
               border: Border.all(
                 color: selected
                     ? const Color(0xFFBFDBFE)
@@ -323,7 +333,7 @@ class _MainPageState extends ConsumerState<MainPage> {
                   height: 30,
                   alignment: Alignment.center,
                   decoration: BoxDecoration(
-                    color: Colors.white,
+                    color: Colors.white.withValues(alpha: 0.3),
                     borderRadius: BorderRadius.circular(8),
                     border: Border.all(color: const Color(0xFFDBEAFE)),
                   ),

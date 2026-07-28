@@ -68,7 +68,7 @@ class _FileManagerPageState extends ConsumerState<FileManagerPage> {
     final fileManagerNotifier = ref.read(fileManagerProvider(widget.deviceId).notifier);
     
     return Container(
-      color: Colors.white,
+      color: Colors.transparent,
       child: Column(
         children: [
           Consumer(

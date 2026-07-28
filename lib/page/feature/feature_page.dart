@@ -2,7 +2,6 @@ import 'package:adb_player/page/feature/feature_provider.dart';
 import 'package:adb_player/page/feature/feature_state.dart';
 import 'package:adb_player/page/feature/feature_data.dart';
 import 'package:adb_player/page/feature/feature_constants.dart';
-import 'package:adb_player/page/feature/feature_background.dart';
 import 'package:desktop_drop/desktop_drop.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -54,17 +53,7 @@ class _FeaturePageState extends ConsumerState<FeaturePage> {
     debugPrint('FeaturePage build - featureState: $featureState');
     
     
-    return Stack(
-      children: [
-        const Positioned(
-          right: 0,
-          bottom: 0,
-          child: FeatureBackground(
-            width: 300,
-            height: 300,
-          ),
-        ),
-        DropTarget(
+    return DropTarget(
           onDragDone: (details) {
             featureNotifier.onDragDone(details);
           },
@@ -135,9 +124,6 @@ class _FeaturePageState extends ConsumerState<FeaturePage> {
               ),
             ],
           ),
-        ),
-        
-      ],
     );
   }
 
@@ -203,7 +189,7 @@ class _FeaturePageState extends ConsumerState<FeaturePage> {
       decoration: BoxDecoration(
         border: Border.all(color: Colors.black12),
         borderRadius: BorderRadius.circular(10),
-        color: Colors.white.withValues(alpha: 0.6),
+        color: Colors.white.withValues(alpha: 0.3),
       ),
       margin: const EdgeInsets.symmetric(vertical: 8),
       child: Material(

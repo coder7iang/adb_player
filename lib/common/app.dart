@@ -12,12 +12,18 @@ class App {
   static const String scrcpyFilePathKey = "scrcpyFilePathKey";
   static const String saveFilePathKey = "saveFilePathKey";
   static const String appBackgroundKey = "appBackgroundKey";
+  static const String appBackgroundFitKey = "appBackgroundFitKey";
+  static const String appBackgroundOpacityKey = "appBackgroundOpacityKey";
+  static const String appBackgroundBlurKey = "appBackgroundBlurKey";
 
   String _adbPath = "";
 
   String _scrcpyPath = "";
 
   String _appBackgroundPath = "";
+  String _appBackgroundFit = "cover";
+  double _appBackgroundOpacity = 0.28;
+  double _appBackgroundBlur = 0;
 
   /// 保存ADB路径
   Future<void> setAdbPath(String path) async {
@@ -89,5 +95,51 @@ class App {
     _appBackgroundPath = path;
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString(appBackgroundKey, path);
+  }
+
+  /// 获取背景适配模式：cover / repeat / contain / center
+  Future<String> getAppBackgroundFit() async {
+    final prefs = await SharedPreferences.getInstance();
+    var fit = prefs.getString(appBackgroundFitKey) ?? "cover";
+    const valid = {'cover', 'repeat', 'contain', 'center'};
+    if (!valid.contains(fit)) {
+      fit = 'cover';
+    }
+    _appBackgroundFit = fit;
+    return _appBackgroundFit;
+  }
+
+  /// 保存背景适配模式
+  Future<void> setAppBackgroundFit(String fit) async {
+    _appBackgroundFit = fit;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(appBackgroundFitKey, fit);
+  }
+
+  /// 背景遮罩透明度 0~1（越大越白、背景越淡）
+  Future<double> getAppBackgroundOpacity() async {
+    final prefs = await SharedPreferences.getInstance();
+    _appBackgroundOpacity =
+        prefs.getDouble(appBackgroundOpacityKey) ?? 0.28;
+    return _appBackgroundOpacity.clamp(0.0, 1.0);
+  }
+
+  Future<void> setAppBackgroundOpacity(double value) async {
+    _appBackgroundOpacity = value.clamp(0.0, 1.0);
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setDouble(appBackgroundOpacityKey, _appBackgroundOpacity);
+  }
+
+  /// 背景模糊强度 0~30（sigma）
+  Future<double> getAppBackgroundBlur() async {
+    final prefs = await SharedPreferences.getInstance();
+    _appBackgroundBlur = prefs.getDouble(appBackgroundBlurKey) ?? 0;
+    return _appBackgroundBlur.clamp(0.0, 30.0);
+  }
+
+  Future<void> setAppBackgroundBlur(double value) async {
+    _appBackgroundBlur = value.clamp(0.0, 30.0);
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setDouble(appBackgroundBlurKey, _appBackgroundBlur);
   }
 }

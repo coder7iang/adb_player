@@ -32,7 +32,7 @@ class _AndroidLogPageState extends ConsumerState<AndroidLogPage> {
     final logNotifier = ref.read(androidLogProvider(widget.deviceId).notifier);
     
     return Container(
-      color: Colors.white,
+      color: Colors.transparent,
       child: Stack(
         children: [
           Material(
@@ -44,7 +44,7 @@ class _AndroidLogPageState extends ConsumerState<AndroidLogPage> {
               margin: const EdgeInsets.fromLTRB(16, 12, 16, 12),
               padding: const EdgeInsets.all(16),
               decoration: BoxDecoration(
-                color: Colors.white,
+                color: Colors.white.withValues(alpha: 0.3),
                 borderRadius: BorderRadius.circular(8),
                 border: Border.all(color: const Color(0xFFE0E0E0), width: 1),
               ),
@@ -91,7 +91,7 @@ class _AndroidLogPageState extends ConsumerState<AndroidLogPage> {
                         decoration: BoxDecoration(
                           border: Border.all(color: const Color(0xFFE0E0E0)),
                           borderRadius: BorderRadius.circular(6),
-                          color: const Color(0xFFFAFAFA),
+                          color: Colors.white.withValues(alpha: 0.3),
                         ),
                         child: PopUpMenuButton(
                           viewModel: logNotifier.filterLevelViewModel,
@@ -339,14 +339,14 @@ class _AndroidLogPageState extends ConsumerState<AndroidLogPage> {
       child: Container(
         margin: const EdgeInsets.fromLTRB(16, 0, 16, 16),
         decoration: BoxDecoration(
-          color: Colors.white,
+          color: Colors.white.withValues(alpha: 0.3),
           borderRadius: BorderRadius.circular(8),
           border: Border.all(color: const Color(0xFFE0E0E0), width: 1),
         ),
         child: ClipRRect(
           borderRadius: BorderRadius.circular(8),
           child: Container(
-            color: Colors.white,
+            color: Colors.transparent,
             padding: const EdgeInsets.symmetric(vertical: 8),
             child: FlutterListView(
               controller: logNotifier.scrollController,
@@ -416,7 +416,7 @@ class _AndroidLogPageState extends ConsumerState<AndroidLogPage> {
           decoration: BoxDecoration(
             border: Border.all(color: const Color(0xFFE0E0E0)),
             borderRadius: BorderRadius.circular(6),
-            color: const Color(0xFFFAFAFA),
+            color: Colors.white.withValues(alpha: 0.3),
           ),
           child: Icon(
             icon,
@@ -442,7 +442,7 @@ class _AndroidLogPageState extends ConsumerState<AndroidLogPage> {
           decoration: BoxDecoration(
             border: Border.all(color: const Color(0xFFE0E0E0)),
             borderRadius: BorderRadius.circular(6),
-            color: const Color(0xFFFAFAFA),
+            color: Colors.white.withValues(alpha: 0.3),
           ),
           child: Row(
             mainAxisSize: MainAxisSize.min,

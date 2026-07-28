@@ -1,5 +1,6 @@
 import 'package:adb_player/common/app.dart';
 import 'package:adb_player/page/setting/setting_provider.dart';
+import 'package:adb_player/page/setting/setting_state.dart';
 import 'package:adb_player/services/adb_service.dart';
 import 'package:adb_player/services/scrcpy_service.dart';
 import 'package:adb_player/dialog/smart_dialog_utils.dart';
@@ -51,6 +52,12 @@ class _SettingPageState extends ConsumerState<SettingPage> {
         final settingNotifier = ref.read(settingProvider.notifier);
         settingNotifier.setAppBackgroundPath(appBackgroundPath);
       }
+      final appBackgroundFit = await app.getAppBackgroundFit();
+      ref.read(settingProvider.notifier).setAppBackgroundFit(appBackgroundFit);
+      final opacity = await app.getAppBackgroundOpacity();
+      ref.read(settingProvider.notifier).setAppBackgroundOpacity(opacity);
+      final blur = await app.getAppBackgroundBlur();
+      ref.read(settingProvider.notifier).setAppBackgroundBlur(blur);
     });
   }
 
@@ -74,11 +81,11 @@ class _SettingPageState extends ConsumerState<SettingPage> {
 
     return Theme(
       data: Theme.of(context).copyWith(
-        scaffoldBackgroundColor: Colors.white,
+        scaffoldBackgroundColor: Colors.transparent,
         dialogTheme: const DialogThemeData(backgroundColor: Colors.white),
       ),
       child: Container(
-        color: Colors.white,
+        color: Colors.transparent,
         child: SingleChildScrollView(
           padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 24),
           child: Column(
@@ -200,10 +207,162 @@ class _SettingPageState extends ConsumerState<SettingPage> {
                       }
                     : null,
                 actionDanger: true,
+                footer: settingNotifier.hasAppBackgroundPath()
+                    ? _buildBackgroundOptions(settingState, settingNotifier)
+                    : null,
               ),
             ],
           ),
         ),
+      ),
+    );
+  }
+
+  Widget _buildBackgroundOptions(
+    SettingState settingState,
+    SettingNotifier settingNotifier,
+  ) {
+    const fitOptions = <(String, String, String)>[
+      ('cover', 'cover', '铺满窗口，多余裁剪'),
+      ('repeat', 'repeat', '平铺重复'),
+      ('contain', 'contain', '完整显示，可能留边'),
+      ('center', 'center', '原尺寸居中'),
+    ];
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Text(
+          '适配模式',
+          style: TextStyle(
+            fontSize: 12,
+            fontWeight: FontWeight.w600,
+            color: Color(0xFF344054),
+          ),
+        ),
+        const SizedBox(height: 8),
+        Wrap(
+          spacing: 8,
+          runSpacing: 8,
+          children: [
+            for (final (value, label, tip) in fitOptions)
+              _buildOptionChip(
+                label: label,
+                tip: tip,
+                selected: settingState.appBackgroundFit == value,
+                onSelected: () => settingNotifier.setAppBackgroundFit(value),
+              ),
+          ],
+        ),
+        const SizedBox(height: 16),
+        const Text(
+          '透明度 & 模糊度',
+          style: TextStyle(
+            fontSize: 12,
+            fontWeight: FontWeight.w600,
+            color: Color(0xFF344054),
+          ),
+        ),
+        const SizedBox(height: 4),
+        Row(
+          children: [
+            Expanded(
+              child: _buildSliderRow(
+                label: '透明度',
+                value: settingState.appBackgroundOpacity,
+                display:
+                    '${(settingState.appBackgroundOpacity * 100).round()}%',
+                onChanged: settingNotifier.setAppBackgroundOpacity,
+              ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: _buildSliderRow(
+                label: '模糊度',
+                value: settingState.appBackgroundBlur / 30,
+                display: settingState.appBackgroundBlur <= 0
+                    ? '关'
+                    : settingState.appBackgroundBlur.toStringAsFixed(0),
+                onChanged: (v) =>
+                    settingNotifier.setAppBackgroundBlur(v * 30),
+              ),
+            ),
+          ],
+        ),
+      ],
+    );
+  }
+
+  Widget _buildSliderRow({
+    required String label,
+    required double value,
+    required String display,
+    required ValueChanged<double> onChanged,
+  }) {
+    return Row(
+      children: [
+        Text(
+          label,
+          style: const TextStyle(
+            fontSize: 12,
+            color: Color(0xFF667085),
+          ),
+        ),
+        Expanded(
+          child: SliderTheme(
+            data: SliderTheme.of(context).copyWith(
+              trackHeight: 4,
+              activeTrackColor: const Color(0xFFA5B4FC),
+              inactiveTrackColor: const Color(0xFFE4E7EC),
+              thumbColor: const Color(0xFF818CF8),
+              overlayColor: const Color(0xFF818CF8).withValues(alpha: 0.16),
+            ),
+            child: Slider(
+              value: value.clamp(0.0, 1.0),
+              onChanged: onChanged,
+            ),
+          ),
+        ),
+        SizedBox(
+          width: 36,
+          child: Text(
+            display,
+            textAlign: TextAlign.right,
+            style: const TextStyle(
+              fontSize: 12,
+              color: Color(0xFF344054),
+              fontWeight: FontWeight.w500,
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildOptionChip({
+    required String label,
+    required String tip,
+    required bool selected,
+    required VoidCallback onSelected,
+  }) {
+    return Tooltip(
+      message: tip,
+      child: ChoiceChip(
+        label: Text(label),
+        selected: selected,
+        onSelected: (_) => onSelected(),
+        selectedColor: const Color(0xFFFCE7F3),
+        labelStyle: TextStyle(
+          fontSize: 12,
+          fontWeight: selected ? FontWeight.w600 : FontWeight.w500,
+          color: selected ? const Color(0xFF9D174D) : const Color(0xFF344054),
+        ),
+        side: BorderSide(
+          color: selected ? const Color(0xFFF9A8D4) : const Color(0xFFE4E7EC),
+        ),
+        backgroundColor: Colors.white,
+        showCheckmark: false,
+        visualDensity: VisualDensity.compact,
       ),
     );
   }
@@ -221,11 +380,12 @@ class _SettingPageState extends ConsumerState<SettingPage> {
     required String actionLabel,
     VoidCallback? onAction,
     bool actionDanger = false,
+    Widget? footer,
   }) {
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: Colors.white.withValues(alpha: 0.3),
         borderRadius: BorderRadius.circular(12),
         border: Border.all(color: const Color(0xFFEAECF0)),
         boxShadow: [
@@ -290,7 +450,7 @@ class _SettingPageState extends ConsumerState<SettingPage> {
                     hintStyle: const TextStyle(
                         fontSize: 13, color: Color(0xFFB8BFCC)),
                     filled: true,
-                    fillColor: const Color(0xFFF8FAFC),
+                    fillColor: Colors.white.withValues(alpha: 0.3),
                     border: OutlineInputBorder(
                       borderRadius: BorderRadius.circular(8),
                       borderSide:
@@ -347,6 +507,12 @@ class _SettingPageState extends ConsumerState<SettingPage> {
               ),
             ],
           ),
+          if (footer != null) ...[
+            const SizedBox(height: 14),
+            const Divider(height: 1, color: Color(0xFFEAECF0)),
+            const SizedBox(height: 12),
+            footer,
+          ],
         ],
       ),
     );

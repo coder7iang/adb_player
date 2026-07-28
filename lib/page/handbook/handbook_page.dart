@@ -3,7 +3,7 @@ import 'package:adb_player/page/handbook/handbook_data.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
-/// 安卓开发者手册 — 搜索 + 全量 ADB 命令列表
+/// ADB 命令速查 — 搜索 + 全量 ADB 命令列表
 class HandbookPage extends StatefulWidget {
   const HandbookPage({Key? key}) : super(key: key);
 
@@ -51,7 +51,7 @@ class _HandbookPageState extends State<HandbookPage> {
     final items = _listItems;
 
     return Container(
-      color: Colors.white,
+      color: Colors.transparent,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
@@ -61,7 +61,7 @@ class _HandbookPageState extends State<HandbookPage> {
               padding: const EdgeInsets.fromLTRB(20, 0, 20, 20),
               child: Container(
                 decoration: BoxDecoration(
-                  color: Colors.white,
+                  color: Colors.transparent,
                   borderRadius: BorderRadius.circular(12),
                   border: Border.all(color: const Color(0xFFE4E7EC)),
                 ),
@@ -129,7 +129,7 @@ class _HandbookPageState extends State<HandbookPage> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 const Text(
-                  '安卓开发者手册',
+                  'ADB 命令速查',
                   style: TextStyle(
                     color: Color(0xFF101828),
                     fontSize: 18,
@@ -175,7 +175,7 @@ class _HandbookPageState extends State<HandbookPage> {
                         },
                       ),
                 filled: true,
-                fillColor: Colors.white,
+                fillColor: Colors.white.withValues(alpha: 0.3),
                 contentPadding: const EdgeInsets.symmetric(horizontal: 12),
                 border: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(10),
@@ -259,7 +259,7 @@ class _EntryCard extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: Colors.white.withValues(alpha: 0.3),
         borderRadius: BorderRadius.circular(10),
         border: Border.all(color: const Color(0xFFE4E7EC)),
       ),
@@ -308,14 +308,19 @@ class _EntryCard extends StatelessWidget {
           ),
           const SizedBox(height: 8),
           Material(
-            color: const Color(0xFF0F172A),
+            color: Colors.white.withValues(alpha: 0.3),
             borderRadius: BorderRadius.circular(8),
             child: InkWell(
               borderRadius: BorderRadius.circular(8),
               onTap: () => onCopy(entry.command),
-              child: Padding(
+              child: Container(
+                width: double.infinity,
                 padding:
                     const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: const Color(0xFFE4E7EC)),
+                ),
                 child: SelectableText(
                   entry.command,
                   style: const TextStyle(
@@ -323,7 +328,7 @@ class _EntryCard extends StatelessWidget {
                     fontFamilyFallback: ['Consolas', 'monospace'],
                     fontSize: 12,
                     height: 1.45,
-                    color: Color(0xFFE2E8F0),
+                    color: Color(0xFF1D4ED8),
                   ),
                 ),
               ),

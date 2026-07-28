@@ -28,7 +28,7 @@ class _AboutPageState extends State<AboutPage> {
   @override
   Widget build(BuildContext context) {
     return Container(
-      color: Colors.white,
+      color: Colors.transparent,
       padding: const EdgeInsets.all(24),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -140,7 +140,7 @@ class _AboutPageState extends State<AboutPage> {
   }
 
   static final BoxDecoration _cardDecoration = BoxDecoration(
-    color: Colors.white,
+    color: Colors.white.withValues(alpha: 0.3),
     borderRadius: BorderRadius.circular(14),
     border: Border.all(color: const Color(0xFFEAECF0)),
     boxShadow: [
@@ -180,7 +180,7 @@ class _LinkItem extends StatelessWidget {
         child: Container(
           padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
           decoration: BoxDecoration(
-            color: Colors.white,
+            color: Colors.white.withValues(alpha: 0.3),
             borderRadius: BorderRadius.circular(12),
             border: Border.all(color: const Color(0xFFEAECF0)),
           ),

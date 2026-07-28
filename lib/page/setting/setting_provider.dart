@@ -91,4 +91,21 @@ class SettingNotifier extends StateNotifier<SettingState> {
     return state.appBackgroundPath.isNotEmpty;
   }
 
+  /// 设置背景适配模式
+  void setAppBackgroundFit(String fit) {
+    state = state.copyWith(appBackgroundFit: fit);
+    App().setAppBackgroundFit(fit);
+  }
+
+  /// 设置背景遮罩透明度
+  void setAppBackgroundOpacity(double value) {
+    state = state.copyWith(appBackgroundOpacity: value);
+    App().setAppBackgroundOpacity(value);
+  }
+
+  /// 设置背景模糊
+  void setAppBackgroundBlur(double value) {
+    state = state.copyWith(appBackgroundBlur: value);
+    App().setAppBackgroundBlur(value);
+  }
 }
