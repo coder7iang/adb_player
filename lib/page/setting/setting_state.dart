@@ -4,12 +4,14 @@ class SettingState {
   final String scrcpyPath;
   final String saveFilePath;
   final String appBackgroundPath;
-  /// cover / repeat / contain / center
+  /// cover / repeat / contain / center / bottom_right
   final String appBackgroundFit;
   /// 遮罩透明度 0~1
   final double appBackgroundOpacity;
   /// 模糊 sigma 0~30
   final double appBackgroundBlur;
+  /// 右下角小图宽度（逻辑像素）
+  final double appBackgroundCornerWidth;
 
   const SettingState({
     this.adbPath = "",
@@ -19,6 +21,7 @@ class SettingState {
     this.appBackgroundFit = "cover",
     this.appBackgroundOpacity = 0.28,
     this.appBackgroundBlur = 0,
+    this.appBackgroundCornerWidth = 280,
   });
 
   SettingState copyWith({
@@ -29,6 +32,7 @@ class SettingState {
     String? appBackgroundFit,
     double? appBackgroundOpacity,
     double? appBackgroundBlur,
+    double? appBackgroundCornerWidth,
   }) {
     return SettingState(
       adbPath: adbPath ?? this.adbPath,
@@ -39,6 +43,8 @@ class SettingState {
       appBackgroundOpacity:
           appBackgroundOpacity ?? this.appBackgroundOpacity,
       appBackgroundBlur: appBackgroundBlur ?? this.appBackgroundBlur,
+      appBackgroundCornerWidth:
+          appBackgroundCornerWidth ?? this.appBackgroundCornerWidth,
     );
   }
 
@@ -52,7 +58,8 @@ class SettingState {
         other.appBackgroundPath == appBackgroundPath &&
         other.appBackgroundFit == appBackgroundFit &&
         other.appBackgroundOpacity == appBackgroundOpacity &&
-        other.appBackgroundBlur == appBackgroundBlur;
+        other.appBackgroundBlur == appBackgroundBlur &&
+        other.appBackgroundCornerWidth == appBackgroundCornerWidth;
   }
 
   @override
@@ -64,10 +71,11 @@ class SettingState {
         appBackgroundFit,
         appBackgroundOpacity,
         appBackgroundBlur,
+        appBackgroundCornerWidth,
       );
 
   @override
   String toString() {
-    return 'SettingState(adbPath: $adbPath, scrcpyPath: $scrcpyPath, saveFilePath: $saveFilePath, appBackgroundPath: $appBackgroundPath, appBackgroundFit: $appBackgroundFit, appBackgroundOpacity: $appBackgroundOpacity, appBackgroundBlur: $appBackgroundBlur)';
+    return 'SettingState(adbPath: $adbPath, scrcpyPath: $scrcpyPath, saveFilePath: $saveFilePath, appBackgroundPath: $appBackgroundPath, appBackgroundFit: $appBackgroundFit, appBackgroundOpacity: $appBackgroundOpacity, appBackgroundBlur: $appBackgroundBlur, appBackgroundCornerWidth: $appBackgroundCornerWidth)';
   }
 }

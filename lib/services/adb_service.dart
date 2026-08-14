@@ -209,10 +209,19 @@ class AdbService {
     var executable = Platform.isWindows ? "where" : "which";
     var result = await _exec(executable, ['adb']);
     if (result != null && result.exitCode == 0) {
-      adbPath = result.stdout.toString().trim();
-      await setAdbPath(adbPath);
-      debugPrint('使用系统 PATH 中的 ADB: $adbPath');
-      return;
+      // where 可能返回多行，只取第一行有效路径
+      final lines = result.stdout
+          .toString()
+          .split(RegExp(r'[\r\n]+'))
+          .map((e) => e.trim())
+          .where((e) => e.isNotEmpty);
+      final found = lines.isEmpty ? '' : lines.first;
+      if (found.isNotEmpty && await File(found).exists()) {
+        adbPath = found;
+        await setAdbPath(adbPath);
+        debugPrint('使用系统 PATH 中的 ADB: $adbPath');
+        return;
+      }
     }
     debugPrint('系统 PATH 未找到 adb，开始下载...');
     adbPath = await downloadAdb();

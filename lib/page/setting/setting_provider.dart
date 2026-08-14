@@ -108,4 +108,10 @@ class SettingNotifier extends StateNotifier<SettingState> {
     state = state.copyWith(appBackgroundBlur: value);
     App().setAppBackgroundBlur(value);
   }
+
+  /// 设置右下角小图显示宽度
+  void setAppBackgroundCornerWidth(double value) {
+    state = state.copyWith(appBackgroundCornerWidth: value);
+    App().setAppBackgroundCornerWidth(value);
+  }
 }

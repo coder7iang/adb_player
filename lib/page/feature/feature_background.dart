@@ -8,7 +8,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:video_player/video_player.dart';
 
 /// 整窗应用背景（图片 / 视频）
-/// 适配：cover / repeat / contain / center
+/// 适配：cover / repeat / contain / center / bottom_right
 class FeatureBackground extends ConsumerStatefulWidget {
   const FeatureBackground({Key? key}) : super(key: key);
 
@@ -57,6 +57,11 @@ class _FeatureBackgroundState extends ConsumerState<FeatureBackground> {
     final blur = await App().getAppBackgroundBlur();
     if (mounted && blur != ref.read(settingProvider).appBackgroundBlur) {
       notifier.setAppBackgroundBlur(blur);
+    }
+    final cornerWidth = await App().getAppBackgroundCornerWidth();
+    if (mounted &&
+        cornerWidth != ref.read(settingProvider).appBackgroundCornerWidth) {
+      notifier.setAppBackgroundCornerWidth(cornerWidth);
     }
 
     await _applyPath(path);
@@ -118,6 +123,8 @@ class _FeatureBackgroundState extends ConsumerState<FeatureBackground> {
         ref.watch(settingProvider.select((s) => s.appBackgroundOpacity));
     final blur =
         ref.watch(settingProvider.select((s) => s.appBackgroundBlur));
+    final cornerWidth =
+        ref.watch(settingProvider.select((s) => s.appBackgroundCornerWidth));
 
     ref.listen<String>(
       settingProvider.select((s) => s.appBackgroundPath),
@@ -137,17 +144,27 @@ class _FeatureBackgroundState extends ConsumerState<FeatureBackground> {
       return const ColoredBox(color: Colors.white);
     }
 
+    final isCorner = fitMode == 'bottom_right';
+
     final Widget media;
     if (_isVideoFile(_backgroundPath)) {
-      final videoFit = fitMode == 'repeat' ? 'cover' : fitMode;
-      media = _buildVideoMedia(videoFit);
+      if (isCorner) {
+        media = _buildCornerVideo(cornerWidth, opacity, blur);
+      } else {
+        final videoFit = fitMode == 'repeat' ? 'cover' : fitMode;
+        media = _buildVideoMedia(videoFit);
+      }
     } else if (_isImageFile(_backgroundPath)) {
-      media = _buildImageMedia(file, fitMode);
+      if (isCorner) {
+        media = _buildCornerImage(file, cornerWidth, opacity, blur);
+      } else {
+        media = _buildImageMedia(file, fitMode);
+      }
     } else {
       return const ColoredBox(color: Colors.white);
     }
 
-    final blurred = blur > 0.5
+    final blurred = !isCorner && blur > 0.5
         ? ImageFiltered(
             imageFilter: ImageFilter.blur(
               sigmaX: blur,
@@ -164,9 +181,149 @@ class _FeatureBackgroundState extends ConsumerState<FeatureBackground> {
         children: [
           const ColoredBox(color: Colors.white),
           blurred,
-          if (opacity > 0)
+          if (!isCorner && opacity > 0)
             ColoredBox(color: Colors.white.withValues(alpha: opacity)),
         ],
+      ),
+    );
+  }
+
+  Widget _buildCornerImage(
+    File file,
+    double cornerWidth,
+    double opacity,
+    double blur,
+  ) {
+    Widget content = Image.file(
+      file,
+      width: cornerWidth,
+      fit: BoxFit.fitWidth,
+      alignment: Alignment.bottomRight,
+      filterQuality: FilterQuality.medium,
+    );
+
+    content = _embedSoftEdges(
+      child: content,
+      feather: (cornerWidth * 0.28).clamp(36.0, 96.0),
+    );
+
+    if (blur > 0.5) {
+      content = ImageFiltered(
+        imageFilter: ImageFilter.blur(
+          sigmaX: blur * 0.35,
+          sigmaY: blur * 0.35,
+          tileMode: TileMode.decal,
+        ),
+        child: content,
+      );
+    }
+
+    if (opacity > 0) {
+      content = Opacity(
+        opacity: (1.0 - opacity).clamp(0.0, 1.0),
+        child: content,
+      );
+    }
+
+    return Align(
+      alignment: Alignment.bottomRight,
+      child: content,
+    );
+  }
+
+  Widget _buildCornerVideo(
+    double cornerWidth,
+    double opacity,
+    double blur,
+  ) {
+    if (!_isVideoInitialized || _videoController == null) {
+      return const SizedBox.shrink();
+    }
+    final size = _videoController!.value.size;
+    final h =
+        size.width > 0 ? cornerWidth * size.height / size.width : cornerWidth;
+
+    Widget content = SizedBox(
+      width: cornerWidth,
+      height: h,
+      child: FittedBox(
+        fit: BoxFit.contain,
+        child: SizedBox(
+          width: size.width,
+          height: size.height,
+          child: VideoPlayer(_videoController!),
+        ),
+      ),
+    );
+
+    content = _embedSoftEdges(
+      child: content,
+      feather: (cornerWidth * 0.28).clamp(36.0, 96.0),
+    );
+
+    if (blur > 0.5) {
+      content = ImageFiltered(
+        imageFilter: ImageFilter.blur(
+          sigmaX: blur * 0.35,
+          sigmaY: blur * 0.35,
+          tileMode: TileMode.decal,
+        ),
+        child: content,
+      );
+    }
+
+    if (opacity > 0) {
+      content = Opacity(
+        opacity: (1.0 - opacity).clamp(0.0, 1.0),
+        child: content,
+      );
+    }
+
+    return Align(
+      alignment: Alignment.bottomRight,
+      child: content,
+    );
+  }
+
+  /// 边缘羽化：贴窗的右/下侧弱淡，朝向界面的左/上侧强淡，消除硬棱角
+  Widget _embedSoftEdges({
+    required Widget child,
+    required double feather,
+  }) {
+    return ShaderMask(
+      blendMode: BlendMode.dstIn,
+      shaderCallback: (bounds) {
+        final fx = (feather / bounds.width).clamp(0.08, 0.45);
+        // 右侧、底部几乎贴边，只留很弱的淡出；左侧、顶部大幅溶入白底
+        return LinearGradient(
+          begin: Alignment.centerLeft,
+          end: Alignment.centerRight,
+          colors: const [
+            Color(0x00000000),
+            Color(0xFF000000),
+            Color(0xFF000000),
+            Color(0xCC000000),
+          ],
+          stops: [0.0, fx, 1.0 - fx * 0.25, 1.0],
+        ).createShader(bounds);
+      },
+      child: ShaderMask(
+        blendMode: BlendMode.dstIn,
+        shaderCallback: (bounds) {
+          final fy = (feather / bounds.height).clamp(0.08, 0.45);
+          return LinearGradient(
+            begin: Alignment.topCenter,
+            end: Alignment.bottomCenter,
+            colors: const [
+              Color(0x00000000),
+              Color(0xFF000000),
+              Color(0xFF000000),
+              Color(0xCC000000),
+            ],
+            stops: [0.0, fy, 1.0 - fy * 0.25, 1.0],
+          ).createShader(bounds);
+        },
+        child: child,
       ),
     );
   }

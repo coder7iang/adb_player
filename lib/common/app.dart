@@ -15,6 +15,8 @@ class App {
   static const String appBackgroundFitKey = "appBackgroundFitKey";
   static const String appBackgroundOpacityKey = "appBackgroundOpacityKey";
   static const String appBackgroundBlurKey = "appBackgroundBlurKey";
+  static const String appBackgroundCornerWidthKey =
+      "appBackgroundCornerWidthKey";
 
   String _adbPath = "";
 
@@ -24,6 +26,7 @@ class App {
   String _appBackgroundFit = "cover";
   double _appBackgroundOpacity = 0.28;
   double _appBackgroundBlur = 0;
+  double _appBackgroundCornerWidth = 280;
 
   /// 保存ADB路径
   Future<void> setAdbPath(String path) async {
@@ -97,11 +100,13 @@ class App {
     await prefs.setString(appBackgroundKey, path);
   }
 
-  /// 获取背景适配模式：cover / repeat / contain / center
+  /// 获取背景适配模式：cover / repeat / contain / center / bottom_right
   Future<String> getAppBackgroundFit() async {
     final prefs = await SharedPreferences.getInstance();
     var fit = prefs.getString(appBackgroundFitKey) ?? "cover";
-    const valid = {'cover', 'repeat', 'contain', 'center'};
+    // 兼容旧值
+    if (fit == 'bottomRight') fit = 'bottom_right';
+    const valid = {'cover', 'repeat', 'contain', 'center', 'bottom_right'};
     if (!valid.contains(fit)) {
       fit = 'cover';
     }
@@ -114,6 +119,21 @@ class App {
     _appBackgroundFit = fit;
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString(appBackgroundFitKey, fit);
+  }
+
+  /// 右下角小图显示宽度（逻辑像素）
+  Future<double> getAppBackgroundCornerWidth() async {
+    final prefs = await SharedPreferences.getInstance();
+    _appBackgroundCornerWidth =
+        prefs.getDouble(appBackgroundCornerWidthKey) ?? 280;
+    return _appBackgroundCornerWidth.clamp(80.0, 400.0);
+  }
+
+  Future<void> setAppBackgroundCornerWidth(double value) async {
+    _appBackgroundCornerWidth = value.clamp(80.0, 400.0);
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setDouble(
+        appBackgroundCornerWidthKey, _appBackgroundCornerWidth);
   }
 
   /// 背景遮罩透明度 0~1（越大越白、背景越淡）

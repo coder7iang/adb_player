@@ -1,4 +1,5 @@
 import 'package:adb_player/common/app.dart';
+import 'package:adb_player/page/main/main_provider.dart';
 import 'package:adb_player/page/setting/setting_provider.dart';
 import 'package:adb_player/page/setting/setting_state.dart';
 import 'package:adb_player/services/adb_service.dart';
@@ -7,6 +8,7 @@ import 'package:adb_player/dialog/smart_dialog_utils.dart';
 import 'package:file_selector/file_selector.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'dart:io';
 
 class SettingPage extends ConsumerStatefulWidget {
   const SettingPage({Key? key}) : super(key: key);
@@ -58,6 +60,10 @@ class _SettingPageState extends ConsumerState<SettingPage> {
       ref.read(settingProvider.notifier).setAppBackgroundOpacity(opacity);
       final blur = await app.getAppBackgroundBlur();
       ref.read(settingProvider.notifier).setAppBackgroundBlur(blur);
+      final cornerWidth = await app.getAppBackgroundCornerWidth();
+      ref
+          .read(settingProvider.notifier)
+          .setAppBackgroundCornerWidth(cornerWidth);
     });
   }
 
@@ -108,17 +114,50 @@ class _SettingPageState extends ConsumerState<SettingPage> {
                 description: 'Android Debug Bridge 可执行文件路径',
                 controller: adbController,
                 hintText: '请输入或选择 ADB 路径',
-                onChanged: settingNotifier.setAdbPath,
+                onChanged: (value) async {
+                  settingNotifier.setAdbPath(value);
+                  if (value.trim().isNotEmpty &&
+                      await File(value.trim()).exists()) {
+                    await ref
+                        .read(mainProvider.notifier)
+                        .syncAdbFromService();
+                  }
+                },
                 onFileSelect: () async {
                   const typeGroup = XTypeGroup(label: 'adb', extensions: []);
                   final file =
                       await openFile(acceptedTypeGroups: [typeGroup]);
                   if (file?.path != null) {
-                    settingNotifier.setAdbPath(file!.path);
+                    await ref
+                        .read(mainProvider.notifier)
+                        .applyManualAdbPath(file!.path);
+                    settingNotifier.setAdbPath(file.path);
                   }
                 },
-                actionLabel: '测试',
-                onAction: settingNotifier.testAdb,
+                actionLabel:
+                    settingState.adbPath.trim().isEmpty ? '配置' : '测试',
+                onAction: () async {
+                  final mainNotifier = ref.read(mainProvider.notifier);
+                  if (settingState.adbPath.trim().isEmpty) {
+                    final ok = await mainNotifier.reconfigureAdb();
+                    if (!ok) {
+                      const typeGroup =
+                          XTypeGroup(label: 'adb', extensions: []);
+                      final file =
+                          await openFile(acceptedTypeGroups: [typeGroup]);
+                      if (file?.path != null) {
+                        await mainNotifier.applyManualAdbPath(file!.path);
+                      }
+                    }
+                    final path = ref.read(mainProvider).adbPath;
+                    if (path.isNotEmpty) {
+                      settingNotifier.setAdbPath(path);
+                    }
+                  } else {
+                    settingNotifier.testAdb();
+                    await mainNotifier.syncAdbFromService();
+                  }
+                },
               ),
               const SizedBox(height: 12),
               _buildSettingCard(
@@ -227,7 +266,10 @@ class _SettingPageState extends ConsumerState<SettingPage> {
       ('repeat', 'repeat', '平铺重复'),
       ('contain', 'contain', '完整显示，可能留边'),
       ('center', 'center', '原尺寸居中'),
+      ('bottom_right', 'bottom_right', '右下角按宽度展示，边缘羽化融入背景'),
     ];
+
+    final isCorner = settingState.appBackgroundFit == 'bottom_right';
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -250,10 +292,23 @@ class _SettingPageState extends ConsumerState<SettingPage> {
                 label: label,
                 tip: tip,
                 selected: settingState.appBackgroundFit == value,
-                onSelected: () => settingNotifier.setAppBackgroundFit(value),
+                onSelected: () =>
+                    settingNotifier.setAppBackgroundFit(value),
               ),
           ],
         ),
+        if (isCorner) ...[
+          const SizedBox(height: 12),
+          _buildSliderRow(
+            label: '宽度',
+            value: ((settingState.appBackgroundCornerWidth - 80) / 320)
+                .clamp(0.0, 1.0),
+            display:
+                '${settingState.appBackgroundCornerWidth.round()} px',
+            onChanged: (v) => settingNotifier
+                .setAppBackgroundCornerWidth(80 + v * 320),
+          ),
+        ],
         const SizedBox(height: 16),
         const Text(
           '透明度 & 模糊度',
