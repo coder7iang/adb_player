@@ -18,10 +18,10 @@ Future<void> _initSystemTray() async {
     return;
   }
 
-  // Windows 托盘图标需要 ico，其他桌面平台继续使用 png。
+  // Windows 托盘用 ico；macOS 菜单栏是模板图，必须透明底，否则白底会渲成黑方块。
   final String iconPath = Platform.isWindows
       ? 'images/app_icon.ico'
-          : 'images/app_icon.png';
+      : 'images/tray_icon.png';
 
   await _systemTray.initSystemTray(
     title: '',
