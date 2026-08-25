@@ -24,18 +24,6 @@ class _LiangCalibratorPageState extends State<LiangCalibratorPage> {
     '梁祖',
   ];
 
-  /// DeepSeek API 价位（元 / 百万 tokens）
-  /// https://api-docs.deepseek.com/zh-cn/quick_start/pricing
-  /// deepseek-v4-flash / deepseek-v4-pro · 缓存未命中
-  static const double _flashInputIdle = 1.5;
-  static const double _flashInputPeak = 3.0;
-  static const double _flashOutputIdle = 4.5;
-  static const double _flashOutputPeak = 9.0;
-  static const double _proInputIdle = 4.5;
-  static const double _proInputPeak = 9.0;
-  static const double _proOutputIdle = 13.5;
-  static const double _proOutputPeak = 27.0;
-
   static const Color _paper = Color(0xFFEFE4CF);
   static const Color _inkLight = Color(0xFF2C2218);
   static const Color _mutedLight = Color(0xFF8A7A64);
@@ -44,10 +32,10 @@ class _LiangCalibratorPageState extends State<LiangCalibratorPage> {
   static const Color _inkDark = Color(0xFFF6EDD8);
   static const Color _mutedDark = Color(0xFFCBBCA0);
 
-  int _level = _minLevel;
+  // 梁神起点：stageIndex 4 × 6
+  int _level = 4 * _stagesPerBucket;
   bool _loaded = false;
   bool _loadError = false;
-  late final _DeepSeekPriceInfo _priceInfo;
   final FocusNode _focusNode = FocusNode();
 
   _LevelState get _state => _describeLevel(_level);
@@ -70,15 +58,9 @@ class _LiangCalibratorPageState extends State<LiangCalibratorPage> {
   @override
   void initState() {
     super.initState();
-    _priceInfo = _DeepSeekPriceInfo.now();
-    _level = _priceInfo.level;
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _focusNode.requestFocus();
       _precacheFrames();
-      // 从 0 动画滑到价位对应等级
-      _level = _minLevel;
-      setState(() {});
-      _animateToLevel(_priceInfo.level);
     });
   }
 
@@ -86,23 +68,6 @@ class _LiangCalibratorPageState extends State<LiangCalibratorPage> {
   void dispose() {
     _focusNode.dispose();
     super.dispose();
-  }
-
-  Future<void> _animateToLevel(int target) async {
-    final start = _level;
-    if (start == target) {
-      _setLevel(target);
-      return;
-    }
-    const steps = 18;
-    for (var i = 1; i <= steps; i++) {
-      if (!mounted) return;
-      final next = start + ((target - start) * i / steps).round();
-      setState(() => _level = next.clamp(_minLevel, _maxLevel));
-      await Future.delayed(const Duration(milliseconds: 28));
-    }
-    if (!mounted) return;
-    _setLevel(target);
   }
 
   Future<void> _precacheFrames() async {
@@ -212,11 +177,8 @@ class _LiangCalibratorPageState extends State<LiangCalibratorPage> {
                           fontSize: 14,
                           fontWeight: FontWeight.w600,
                           letterSpacing: 2,
-                          fontFamily: 'Songti SC',
                         ),
                       ),
-                      const Spacer(),
-                      _buildPriceBadge(),
                     ],
                   ),
                   Expanded(
@@ -255,7 +217,6 @@ class _LiangCalibratorPageState extends State<LiangCalibratorPage> {
                 color: _muted,
                 fontSize: 11,
                 height: 1.25,
-                fontFamily: 'Songti SC',
               )),
           const Spacer(),
           Text(
@@ -264,7 +225,6 @@ class _LiangCalibratorPageState extends State<LiangCalibratorPage> {
               color: _accent,
               fontSize: 22,
               letterSpacing: 1,
-              fontFamily: 'Songti SC',
               fontFeatures: const [FontFeature.tabularFigures()],
             ),
           ),
@@ -273,7 +233,6 @@ class _LiangCalibratorPageState extends State<LiangCalibratorPage> {
             style: TextStyle(
               color: _accent.withValues(alpha: 0.75),
               fontSize: 12,
-              fontFamily: 'Songti SC',
             ),
           ),
           const SizedBox(height: 8),
@@ -302,7 +261,6 @@ class _LiangCalibratorPageState extends State<LiangCalibratorPage> {
               fontSize: 220,
               fontWeight: FontWeight.w700,
               height: 0.8,
-              fontFamily: 'Kaiti SC',
             ),
           ),
         ),
@@ -375,7 +333,6 @@ class _LiangCalibratorPageState extends State<LiangCalibratorPage> {
                                           : _inkDark,
                                       fontSize: 13,
                                       letterSpacing: 3,
-                                      fontFamily: 'Songti SC',
                                     ),
                                   ),
                                 ),
@@ -412,7 +369,6 @@ class _LiangCalibratorPageState extends State<LiangCalibratorPage> {
                         color: _muted,
                         fontSize: 11,
                         letterSpacing: 2.5,
-                        fontFamily: 'Songti SC',
                       ),
                     ),
                   ),
@@ -433,7 +389,6 @@ class _LiangCalibratorPageState extends State<LiangCalibratorPage> {
                         fontWeight: FontWeight.w700,
                         letterSpacing: 3,
                         height: 1,
-                        fontFamily: 'Kaiti SC',
                         shadows: _isFinal
                             ? [
                                 Shadow(
@@ -453,7 +408,6 @@ class _LiangCalibratorPageState extends State<LiangCalibratorPage> {
                         color: _muted,
                         fontSize: 11,
                         letterSpacing: 2.5,
-                        fontFamily: 'Songti SC',
                       ),
                     ),
                   ),
@@ -566,7 +520,6 @@ class _LiangCalibratorPageState extends State<LiangCalibratorPage> {
                       fontWeight:
                           isCurrent ? FontWeight.w700 : FontWeight.w400,
                       letterSpacing: 1.5,
-                      fontFamily: 'Songti SC',
                     ),
                   ),
                 );
@@ -580,76 +533,7 @@ class _LiangCalibratorPageState extends State<LiangCalibratorPage> {
               color: _muted,
               fontSize: 11,
               letterSpacing: 3,
-              fontFamily: 'Songti SC',
             ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  /// 右上角：紧凑对照表，一眼看完 Flash / Pro × 空闲 / 高峰
-  Widget _buildPriceBadge() {
-    final info = _priceInfo;
-    final active = info.isPeak
-        ? const Color(0xFFE85D4C)
-        : const Color(0xFF2A9D8F);
-    final muted = _muted;
-    TextStyle cell({bool hi = false, bool head = false}) => TextStyle(
-          color: hi ? active : muted,
-          fontSize: head ? 10 : 11,
-          height: 1.25,
-          letterSpacing: 0.2,
-          fontFamily: 'Songti SC',
-          fontWeight: hi || head ? FontWeight.w700 : FontWeight.w500,
-          fontFeatures: const [FontFeature.tabularFigures()],
-        );
-
-    Widget col(String a, String b, String c, {bool hi = false}) {
-      return Column(
-        crossAxisAlignment: CrossAxisAlignment.end,
-        children: [
-          Text(a, style: cell(head: true, hi: hi)),
-          Text(b, style: cell(hi: hi)),
-          Text(c, style: cell(hi: hi)),
-        ],
-      );
-    }
-
-    return Padding(
-      padding: const EdgeInsets.only(right: 2),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.end,
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Text(
-            'DeepSeek  ¥/MTok · ${info.periodLabel}',
-            style: TextStyle(
-              color: active,
-              fontSize: 11,
-              letterSpacing: 0.6,
-              fontFamily: 'Songti SC',
-              fontWeight: FontWeight.w700,
-            ),
-          ),
-          const SizedBox(height: 4),
-          Row(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Column(
-                crossAxisAlignment: CrossAxisAlignment.end,
-                children: [
-                  Text(' ', style: cell(head: true)), // 对齐表头行高
-                  Text('Flash', style: cell()),
-                  Text('Pro', style: cell()),
-                ],
-              ),
-              const SizedBox(width: 10),
-              col('空闲', info.flashIdle, info.proIdle, hi: !info.isPeak),
-              const SizedBox(width: 10),
-              col('高峰', info.flashPeak, info.proPeak, hi: info.isPeak),
-            ],
           ),
         ],
       ),
@@ -667,28 +551,16 @@ class _LiangCalibratorPageState extends State<LiangCalibratorPage> {
         ),
         child: Padding(
           padding: const EdgeInsets.only(top: 10),
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Text(
-                '31 级连续进化',
-                style: TextStyle(
-                  color: _muted,
-                  fontSize: 10,
-                  letterSpacing: 2,
-                  fontFamily: 'Songti SC',
-                ),
+          child: Align(
+            alignment: Alignment.centerLeft,
+            child: Text(
+              '31 级连续进化',
+              style: TextStyle(
+                color: _muted,
+                fontSize: 10,
+                letterSpacing: 2,
               ),
-              Text(
-                'DeepSeek Flash / Pro · ${_priceInfo.periodLabel}价',
-                style: TextStyle(
-                  color: _muted,
-                  fontSize: 10,
-                  letterSpacing: 1.5,
-                  fontFamily: 'Songti SC',
-                ),
-              ),
-            ],
+            ),
           ),
         ),
       ),
@@ -736,64 +608,6 @@ class _LevelState {
   final double stageProgress;
 }
 
-
-/// DeepSeek 当前时段价位 → 梁系等级
-/// 价目：https://api-docs.deepseek.com/zh-cn/quick_start/pricing
-class _DeepSeekPriceInfo {
-  const _DeepSeekPriceInfo({
-    required this.isPeak,
-    required this.level,
-  });
-
-  final bool isPeak;
-  final int level;
-
-  String get periodLabel => isPeak ? '高峰' : '空闲';
-
-  static String _pair(double input, double output) =>
-      '${input.toStringAsFixed(1)}/${output.toStringAsFixed(1)}';
-
-  String get flashIdle => _pair(
-        _LiangCalibratorPageState._flashInputIdle,
-        _LiangCalibratorPageState._flashOutputIdle,
-      );
-
-  String get flashPeak => _pair(
-        _LiangCalibratorPageState._flashInputPeak,
-        _LiangCalibratorPageState._flashOutputPeak,
-      );
-
-  String get proIdle => _pair(
-        _LiangCalibratorPageState._proInputIdle,
-        _LiangCalibratorPageState._proOutputIdle,
-      );
-
-  String get proPeak => _pair(
-        _LiangCalibratorPageState._proInputPeak,
-        _LiangCalibratorPageState._proOutputPeak,
-      );
-
-  factory _DeepSeekPriceInfo.now() {
-    final beijing = DateTime.now().toUtc().add(const Duration(hours: 8));
-    final peak = _isPeakBeijing(beijing);
-    final flashIn = peak
-        ? _LiangCalibratorPageState._flashInputPeak
-        : _LiangCalibratorPageState._flashInputIdle;
-    // 以 Flash 输入价映射等级：价越低性价比越高 → 1.5→26，3.0→18
-    final level = (30 - flashIn * 4)
-        .round()
-        .clamp(_LiangCalibratorPageState._minLevel,
-            _LiangCalibratorPageState._maxLevel);
-    return _DeepSeekPriceInfo(isPeak: peak, level: level);
-  }
-
-  /// 北京时间周一至周五 09:00–12:00、14:00–18:00 为高峰
-  static bool _isPeakBeijing(DateTime beijing) {
-    if (beijing.weekday > DateTime.friday) return false;
-    final m = beijing.hour * 60 + beijing.minute;
-    return (m >= 9 * 60 && m < 12 * 60) || (m >= 14 * 60 && m < 18 * 60);
-  }
-}
 
 class _DiamondThumb extends SliderComponentShape {
   const _DiamondThumb({required this.color, required this.ring});

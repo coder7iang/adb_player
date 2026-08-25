@@ -38,7 +38,7 @@ class FoodRouletteNotifier extends StateNotifier<FoodRouletteState> {
     }
   }
 
-  /// 进入旋转状态（不预抽结果）
+  /// 进入旋转状态（不预抽结果；保留上次结果以便过渡动画）
   void startSpinning() {
     if (state.foods.isEmpty) {
       debugPrint('食物数据为空，无法开始旋转');
@@ -46,8 +46,6 @@ class FoodRouletteNotifier extends StateNotifier<FoodRouletteState> {
     }
     state = state.copyWith(
       isSpinning: true,
-      selectedIndex: -1,
-      clearSelectedFood: true,
     );
     debugPrint('开始旋转');
   }
