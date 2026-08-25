@@ -96,6 +96,7 @@ flutter:
     - images/
     - assets/data/
     - assets/file/
+    - assets/liang/frames/
   # assets:
   #   - images/a_dot_burr.jpeg
   #   - images/a_dot_ham.jpeg
