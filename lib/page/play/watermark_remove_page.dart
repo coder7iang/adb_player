@@ -222,10 +222,25 @@ class _WatermarkRemovePageState extends State<WatermarkRemovePage> {
           return;
         }
 
+        final meta = await DouyinResolveService.resolveKuaishouMeta(input);
+        if (meta.isAtlas) {
+          setState(() => _statusHint = 'App 内打开快手图文页提取图片…');
+          final web = await _extractViaWebView(
+            mediaId: meta.photoId,
+            platform: ShortVideoPlatform.kuaishou,
+            isNote: true,
+            pageUrlOverride: meta.finalUrl.isNotEmpty
+                ? meta.finalUrl
+                : DouyinResolveService.kuaishouPhotoPageUrl(meta.photoId),
+          );
+          if (!mounted) return;
+          _finishSuccess(web);
+          return;
+        }
+
         setState(() => _statusHint = 'App 内打开快手页提取直链…');
-        final photoId = await DouyinResolveService.resolveKuaishouPhotoId(input);
         final web = await _extractViaWebView(
-          mediaId: photoId,
+          mediaId: meta.photoId,
           platform: ShortVideoPlatform.kuaishou,
         );
         if (!mounted) return;
@@ -294,6 +309,7 @@ class _WatermarkRemovePageState extends State<WatermarkRemovePage> {
     required String mediaId,
     required ShortVideoPlatform platform,
     bool isNote = false,
+    String? pageUrlOverride,
   }) async {
     _pollTimer?.cancel();
     final old = _webCompleter;
@@ -309,12 +325,21 @@ class _WatermarkRemovePageState extends State<WatermarkRemovePage> {
     _lastImageCount = 0;
     _imageStablePolls = 0;
 
+    if (platform == ShortVideoPlatform.kuaishou) {
+      await _webController.setUserAgent(DouyinResolveService.mobileUserAgent);
+    } else {
+      await _webController.setUserAgent(DouyinResolveService.userAgent);
+    }
+
     await _injectHook(platform: platform);
-    final pageUrl = isNote
-        ? DouyinResolveService.notePageUrl(mediaId)
-        : platform == ShortVideoPlatform.kuaishou
-            ? DouyinResolveService.kuaishouVideoPageUrl(mediaId)
-            : DouyinResolveService.videoPageUrl(mediaId);
+    final pageUrl = pageUrlOverride ??
+        (isNote
+            ? (platform == ShortVideoPlatform.kuaishou
+                ? DouyinResolveService.kuaishouPhotoPageUrl(mediaId)
+                : DouyinResolveService.notePageUrl(mediaId))
+            : platform == ShortVideoPlatform.kuaishou
+                ? DouyinResolveService.kuaishouVideoPageUrl(mediaId)
+                : DouyinResolveService.videoPageUrl(mediaId));
     await _webController.loadRequest(Uri.parse(pageUrl));
     unawaited(_injectHook(platform: platform));
 
@@ -369,11 +394,14 @@ class _WatermarkRemovePageState extends State<WatermarkRemovePage> {
       }
 
       if (isNote) {
-        final images = _parseImageUrls(map['images']);
+        var images = _parseImageUrls(map['images']);
         if (images.isEmpty) return;
+        if (platform == ShortVideoPlatform.kuaishou) {
+          images = DouyinResolveService.sortKuaishouAtlasUrls(images);
+        }
 
         final source = (map['source'] as String?)?.trim() ?? '';
-        // detail 接口一般一次给全量，可直接结束
+        // detail 接口一般一次给全量；atlas 需等张数稳定，避免首张就收工
         final fromDetail = source.contains('detail');
         if (images.length == _lastImageCount) {
           _imageStablePolls++;
@@ -383,7 +411,6 @@ class _WatermarkRemovePageState extends State<WatermarkRemovePage> {
           _log('图文收集中… ${images.length} 张 (source=$source)');
         }
 
-        // 数量稳定约 2.4s，且至少已轮询 ~4s，避免首张就收工
         final stableEnough = _imageStablePolls >= 4 && _pollCount >= 8;
         final forceFinish = _pollCount >= 40 && images.isNotEmpty;
         if (!fromDetail && !stableEnough && !forceFinish) return;

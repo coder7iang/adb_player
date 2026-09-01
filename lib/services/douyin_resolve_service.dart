@@ -35,6 +35,21 @@ class DouyinResolveResult {
 
 enum ShortVideoPlatform { douyin, kuaishou }
 
+/// 快手短链跟跳结果
+class KuaishouResolveMeta {
+  const KuaishouResolveMeta({
+    required this.photoId,
+    required this.finalUrl,
+    required this.isAtlas,
+  });
+
+  final String photoId;
+  final String finalUrl;
+
+  /// 图文/图集（非视频）
+  final bool isAtlas;
+}
+
 /// 抖音 / 快手分享链接解析
 ///
 /// - 抖音：WebView 自行访问（可选 yt-dlp + Cookie）
@@ -211,14 +226,15 @@ class DouyinResolveService {
 })();
 ''';
 
-  /// 快手：拦截 graphql / 读取 video 元素
+  /// 快手：拦截 graphql / 读取 video / 图集 atlas
   static const String kuaishouCaptureHookJs = r'''
 (function(){
   if (window.__ksHooked) return;
   window.__ksHooked = true;
   if (!window.__dyCapture) {
-    window.__dyCapture = {video:'', cover:'', title:'', source:''};
+    window.__dyCapture = {video:'', cover:'', title:'', source:'', images:[]};
   }
+  if (!window.__dyCapture.images) window.__dyCapture.images = [];
 
   function okMp4(u){
     if (!u || typeof u !== 'string') return false;
@@ -227,7 +243,28 @@ class DouyinResolveService {
     if (u.indexOf('watermark') >= 0) return false;
     return u.indexOf('.mp4') >= 0
       || u.indexOf('photo-video') >= 0
-      || u.indexOf('kwaicdn.com') >= 0;
+      || (u.indexOf('kwaicdn.com') >= 0 && u.indexOf('.mp4') >= 0);
+  }
+
+  function okAtlas(u){
+    if (!u || typeof u !== 'string') return false;
+    if (u.indexOf('http') !== 0) return false;
+    if (u.indexOf('uhead') >= 0 || u.indexOf('emotion') >= 0) return false;
+    if (u.indexOf('avatar') >= 0) return false;
+    return u.indexOf('/ufile/atlas/') >= 0
+      || (u.indexOf('yximgs.com') >= 0 && (u.indexOf('.jpg') >= 0 || u.indexOf('.jpeg') >= 0 || u.indexOf('.webp') >= 0 || u.indexOf('.png') >= 0) && u.indexOf('/ufile/') >= 0);
+  }
+
+  function pushAtlas(u){
+    if (!okAtlas(u)) return;
+    var key = u.split('?')[0];
+    var list = window.__dyCapture.images;
+    for (var i = 0; i < list.length; i++) {
+      if (list[i].split('?')[0] === key) return;
+    }
+    list.push(u);
+    window.__dyCapture.source = window.__dyCapture.source || 'atlas';
+    if (!window.__dyCapture.cover) window.__dyCapture.cover = u;
   }
 
   function grabKs(text){
@@ -244,9 +281,12 @@ class DouyinResolveService {
         if (p.coverUrl) window.__dyCapture.cover = p.coverUrl;
         if (p.caption) window.__dyCapture.title = p.caption;
       }
+      // 图集 URL
+      var reImg = /https:\/\/[^"\\]+\/ufile\/atlas\/[^"\\]+/g;
+      var m;
+      while ((m = reImg.exec(text)) !== null) pushAtlas(m[0]);
       if (!window.__dyCapture.video) {
         var re = /https:\/\/[^"\\]+\.mp4[^"\\]*/g;
-        var m;
         while ((m = re.exec(text)) !== null) {
           if (okMp4(m[0])) {
             window.__dyCapture.video = m[0];
@@ -258,22 +298,33 @@ class DouyinResolveService {
     } catch (e) {}
   }
 
-  function pollVideo(){
+  function pollMedia(){
     try {
       var v = document.querySelector('video');
-      if (!v) return;
-      var src = v.currentSrc || v.src || '';
-      if (okMp4(src)) {
-        window.__dyCapture.video = src;
-        window.__dyCapture.source = window.__dyCapture.source || 'video';
+      if (v) {
+        var src = v.currentSrc || v.src || '';
+        if (okMp4(src)) {
+          window.__dyCapture.video = src;
+          window.__dyCapture.source = window.__dyCapture.source || 'video';
+        }
       }
+      var imgs = document.querySelectorAll('img');
+      for (var i = 0; i < imgs.length; i++) {
+        pushAtlas(imgs[i].src || '');
+        pushAtlas(imgs[i].currentSrc || '');
+      }
+      try {
+        var entries = performance.getEntriesByType('resource');
+        for (var r = 0; r < entries.length; r++) pushAtlas(entries[r].name || '');
+      } catch (e) {}
       if (!window.__dyCapture.title) {
         var t = (document.title || '').replace(/\s*-\s*快手\s*$/, '').trim();
-        if (t) window.__dyCapture.title = t;
+        if (t && t !== '快手') window.__dyCapture.title = t;
       }
     } catch (e) {}
   }
-  setInterval(pollVideo, 500);
+  setInterval(pollMedia, 400);
+  pollMedia();
 
   try {
     var ofetch = window.fetch;
@@ -283,7 +334,7 @@ class DouyinResolveService {
         try {
           var req = args[0];
           var u = (typeof req === 'string') ? req : (req && req.url) || '';
-          if (u && u.indexOf('graphql') >= 0) {
+          if (u && (u.indexOf('graphql') >= 0 || u.indexOf('photo') >= 0 || u.indexOf('rest') >= 0)) {
             res.clone().text().then(grabKs);
           }
         } catch (e) {}
@@ -302,7 +353,8 @@ class DouyinResolveService {
     XMLHttpRequest.prototype.send = function(){
       this.addEventListener('load', function(){
         try {
-          if (this.__ksUrl && String(this.__ksUrl).indexOf('graphql') >= 0) {
+          var u = String(this.__ksUrl || '');
+          if (u.indexOf('graphql') >= 0 || u.indexOf('photo') >= 0 || u.indexOf('rest') >= 0) {
             grabKs(this.responseText);
           }
         } catch (e) {}
@@ -336,13 +388,19 @@ class DouyinResolveService {
   function okImage(u){
     if (!u || typeof u !== 'string') return false;
     if (u.indexOf('http') !== 0) return false;
-    if (u.indexOf('douyinpic') < 0) return false;
     if (u.indexOf('avatar') >= 0 || u.indexOf('100x100') >= 0) return false;
     if (u.indexOf('aweme_comment') >= 0 || u.indexOf('sticker') >= 0) return false;
     if (u.indexOf('pcweb_cover') >= 0 || u.indexOf('noop.jpeg') >= 0) return false;
+    if (u.indexOf('uhead') >= 0 || u.indexOf('emotion') >= 0) return false;
     if (u.indexOf('biz_tag=aweme_images') >= 0) return true;
     if (u.indexOf('tplv-dy-aweme-images') >= 0) return true;
     if (u.indexOf('tos-cn-i-') >= 0 && u.indexOf('image-cut-tos') < 0) return true;
+    // 快手图集
+    if (u.indexOf('/ufile/atlas/') >= 0) return true;
+    if (u.indexOf('yximgs.com') >= 0 && u.indexOf('/ufile/') >= 0 &&
+        (u.indexOf('.jpg') >= 0 || u.indexOf('.jpeg') >= 0 || u.indexOf('.webp') >= 0 || u.indexOf('.png') >= 0)) {
+      return true;
+    }
     return false;
   }
 
@@ -494,6 +552,10 @@ class DouyinResolveService {
   static String kuaishouVideoPageUrl(String photoId) =>
       'https://www.kuaishou.com/short-video/$photoId';
 
+  /// 快手移动端图文/作品分享页（图集可在此加载 atlas）
+  static String kuaishouPhotoPageUrl(String photoId) =>
+      'https://v.m.chenzhongtech.com/fw/photo/$photoId';
+
   static String notePageUrl(String noteId) =>
       'https://www.douyin.com/note/$noteId';
 
@@ -504,19 +566,39 @@ class DouyinResolveService {
     return false;
   }
 
+  static bool isKuaishouAtlasUrl(String url) {
+    final u = url.toLowerCase();
+    return u.contains('subbiz=browse_slide_photo') ||
+        u.contains('shareresourcetype=photo_other') ||
+        u.contains('shareresourcetype=photo') ||
+        u.contains('browse_slide_photo');
+  }
+
   static bool isDownloadableImageUrl(String url) {
     final u = url.trim();
     if (u.isEmpty || !u.startsWith('http')) return false;
-    if (!u.contains('douyinpic.com')) return false;
     if (u.contains('avatar') ||
         u.contains('100x100') ||
         u.contains('aweme_comment') ||
         u.contains('sticker') ||
         u.contains('pcweb_cover') ||
         u.contains('noop.jpeg') ||
-        u.contains('image-cut-tos')) {
+        u.contains('image-cut-tos') ||
+        u.contains('uhead') ||
+        u.contains('emotion')) {
       return false;
     }
+    // 快手图集
+    if (u.contains('/ufile/atlas/')) return true;
+    if ((u.contains('yximgs.com') || u.contains('kwimgs.com')) &&
+        u.contains('/ufile/') &&
+        (u.contains('.jpg') ||
+            u.contains('.jpeg') ||
+            u.contains('.webp') ||
+            u.contains('.png'))) {
+      return true;
+    }
+    if (!u.contains('douyinpic.com')) return false;
     return u.contains('biz_tag=aweme_images') ||
         u.contains('tplv-dy-aweme-images') ||
         u.contains('tos-cn-i-');
@@ -538,8 +620,8 @@ class DouyinResolveService {
         u.contains('365yg.com') ||
         u.contains('douyin.com/aweme/v1') ||
         u.contains('kwaicdn.com') ||
-        u.contains('yximgs.com') ||
-        u.contains('kwimgs.com') ||
+        (u.contains('yximgs.com') && u.contains('.mp4')) ||
+        (u.contains('kwimgs.com') && u.contains('.mp4')) ||
         u.contains('ndcimgs.com') ||
         u.contains('chenzhongtech.com') ||
         (u.contains('mime_type=video_mp4') && u.contains('/video/')) ||
@@ -640,15 +722,12 @@ class DouyinResolveService {
     throw Exception('无法从链接解析图文 ID，请换一条分享链接重试');
   }
 
-  /// 快手：短链跟跳 → photoId
-  static Future<String> resolveKuaishouPhotoId(String input) async {
+  /// 快手：短链跟跳 → photoId + 是否图集
+  static Future<KuaishouResolveMeta> resolveKuaishouMeta(String input) async {
     final shareUrl = extractKuaishouShareUrl(input);
     if (shareUrl == null) {
       throw Exception('未找到快手分享链接');
     }
-
-    final directId = _photoIdRe.firstMatch(shareUrl)?.group(1);
-    if (directId != null) return directId;
 
     final dio = Dio(
       BaseOptions(
@@ -670,9 +749,44 @@ class DouyinResolveService {
     final html = response.data ?? '';
     final finalUrl = response.realUri.toString();
     final photoId = _photoIdRe.firstMatch(finalUrl)?.group(1) ??
+        _photoIdRe.firstMatch(shareUrl)?.group(1) ??
         _photoIdRe.firstMatch(html)?.group(1);
-    if (photoId != null && photoId.isNotEmpty) return photoId;
-    throw Exception('无法从链接解析快手视频 ID，请换一条分享链接重试');
+    if (photoId == null || photoId.isEmpty) {
+      throw Exception('无法从链接解析快手作品 ID，请换一条分享链接重试');
+    }
+
+    final isAtlas = isKuaishouAtlasUrl(finalUrl) ||
+        html.contains('/ufile/atlas/') ||
+        html.toLowerCase().contains('browse_slide_photo') ||
+        (input.contains('图文') && !html.contains('.mp4'));
+    _log(
+      'kuaishou meta id=$photoId atlas=$isAtlas '
+      'final=${finalUrl.substring(0, finalUrl.length.clamp(0, 120))}',
+    );
+    return KuaishouResolveMeta(
+      photoId: photoId,
+      finalUrl: finalUrl,
+      isAtlas: isAtlas,
+    );
+  }
+
+  /// 快手：短链跟跳 → photoId
+  static Future<String> resolveKuaishouPhotoId(String input) async {
+    final meta = await resolveKuaishouMeta(input);
+    return meta.photoId;
+  }
+
+  /// 按序号排序图集 URL（…_0.jpg, …_1.jpg）
+  static List<String> sortKuaishouAtlasUrls(Iterable<String> urls) {
+    final list = urls.toList();
+    int indexOf(String u) {
+      final m = RegExp(r'_(\d+)\.(?:jpg|jpeg|png|webp)', caseSensitive: false)
+          .firstMatch(u.split('?').first);
+      return m != null ? int.tryParse(m.group(1)!) ?? 9999 : 9999;
+    }
+
+    list.sort((a, b) => indexOf(a).compareTo(indexOf(b)));
+    return list;
   }
 
   /// 快手：尝试 HTTP 直解析（新版分享页常为空，失败时由 WebView 兜底）
@@ -705,6 +819,37 @@ class DouyinResolveService {
     final photoId = _photoIdRe.firstMatch(finalUrl)?.group(1) ??
         _photoIdRe.firstMatch(html)?.group(1) ??
         '';
+
+    // 图集：HTML / 跳转参数里可能直接带 atlas 图
+    final atlasFromHtml = RegExp(
+      r'https://[^"\\\s<>]+/ufile/atlas/[^"\\\s<>]+',
+      caseSensitive: false,
+    ).allMatches(html).map((m) => m.group(0)!).where(isDownloadableImageUrl);
+    final atlasUrls = sortKuaishouAtlasUrls({...atlasFromHtml});
+    if (atlasUrls.isNotEmpty || isKuaishouAtlasUrl(finalUrl)) {
+      if (atlasUrls.isNotEmpty) {
+        final title = _pickJsonString(html, const [
+              'caption',
+              'shareTitle',
+              'photoDescription',
+              'title',
+            ]) ??
+            '';
+        _log('kuaishou http atlas id=$photoId count=${atlasUrls.length}');
+        return DouyinResolveResult(
+          awemeId: photoId.isNotEmpty ? photoId : 'kuaishou',
+          videoUrl: '',
+          title: title,
+          coverUrl: atlasUrls.first,
+          source: 'kuaishou/http',
+          platform: ShortVideoPlatform.kuaishou,
+          mediaType: DouyinMediaType.images,
+          imageUrls: atlasUrls,
+        );
+      }
+      // 识别为图集但 HTML 无图：交给 WebView
+      return null;
+    }
 
     final initMatch = RegExp(
       r'window\.INIT_STATE\s*=\s*(\{[\s\S]*?\})\s*;?\s*</script>',
