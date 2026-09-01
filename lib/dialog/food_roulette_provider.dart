@@ -50,6 +50,21 @@ class FoodRouletteNotifier extends StateNotifier<FoodRouletteState> {
     debugPrint('开始旋转');
   }
 
+  /// 仅清除旋转中标记（进页/离页时避免卡在「旋转中」）
+  void clearSpinning() {
+    if (!state.isSpinning) return;
+    state = state.copyWith(isSpinning: false);
+  }
+
+  /// 进页重置：清旋转态与上次结果，回到「等待开始」
+  void resetForEntry() {
+    state = state.copyWith(
+      isSpinning: false,
+      selectedIndex: -1,
+      clearSelectedFood: true,
+    );
+  }
+
   /// 揭晓结果（动画停止时由 dialog 根据落点扇形传入 idx）
   void revealSpin(int idx) {
     if (idx < 0 || idx >= state.foods.length) return;

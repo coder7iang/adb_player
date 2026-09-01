@@ -35,10 +35,22 @@ class _FoodRoulettePageState extends ConsumerState<FoodRoulettePage>
       duration: _spinDuration,
       vsync: this,
     );
+    // 进页回到干净态，不带上次结果 / 旋转中
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      ref.read(foodRouletteProvider.notifier).resetForEntry();
+      setState(() {
+        _baseAngle = 0;
+        _wheelAnimation = null;
+      });
+      _wheelController.reset();
+    });
   }
 
   @override
   void dispose() {
+    // 离页清旋转标记，避免中途退出残留
+    ref.read(foodRouletteProvider.notifier).clearSpinning();
     _wheelController.dispose();
     super.dispose();
   }

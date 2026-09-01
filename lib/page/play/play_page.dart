@@ -3,6 +3,7 @@ import 'package:adb_player/page/play/code_rain_page.dart';
 import 'package:adb_player/page/play/food_roulette_page.dart';
 import 'package:adb_player/page/play/liang_calibrator_page.dart';
 import 'package:adb_player/page/play/short_video_page.dart';
+import 'package:adb_player/page/play/watermark_remove_page.dart';
 import 'package:audioplayers/audioplayers.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -41,6 +42,7 @@ class _PlayPageState extends State<PlayPage> {
 
   bool _showLaborLawPdf = false;
   bool _showFoodRoulette = false;
+  bool _showWatermarkRemove = false;
   bool _showLiangCalibrator = false;
   List<String>? _videoFeedUrls;
   String _videoFeedTitle = '赏心悦目';
@@ -86,11 +88,17 @@ class _PlayPageState extends State<PlayPage> {
         body = FoodRoulettePage(
           onClose: () => setState(() => _showFoodRoulette = false),
         );
+      } else if (_showWatermarkRemove) {
+        body = WatermarkRemovePage(
+          onClose: () => setState(() => _showWatermarkRemove = false),
+        );
       } else {
         body = _buildPlayCards();
       }
       content = Container(
-        color: (_showLaborLawPdf || _showFoodRoulette)
+        color: (_showLaborLawPdf ||
+                _showFoodRoulette ||
+                _showWatermarkRemove)
             ? Colors.white
             : widget.fullscreen
                 ? Colors.white.withValues(alpha: 0.92)
@@ -185,6 +193,13 @@ class _PlayPageState extends State<PlayPage> {
         subtitle: '31 级梁系校准',
         accent: const Color(0xFFC23A2B),
         onTap: _openLiangCalibrator,
+      ),
+      _PlayFeatureCard(
+        icon: Icons.water_drop_outlined,
+        title: '去水印',
+        subtitle: '抖音 / 快手 / 图文',
+        accent: const Color(0xFF6C5CE7),
+        onTap: () => setState(() => _showWatermarkRemove = true),
       ),
     ];
 
