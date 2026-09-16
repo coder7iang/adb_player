@@ -4,7 +4,6 @@ import 'package:archive/archive_io.dart';
 import 'package:adb_player/common/app.dart';
 import 'package:adb_player/common/key_code.dart';
 import 'package:adb_player/dialog/devices_model.dart';
-import 'package:adb_player/dialog/smart_dialog_utils.dart';
 import 'package:adb_player/entity/app_info.dart';
 import 'package:adb_player/entity/app_signature_info.dart';
 import 'package:adb_player/entity/list_filter_item.dart';
@@ -736,9 +735,10 @@ class AdbService {
     }
   }
 
-  /// 安装 APK 到指定设备
-  Future<bool> installApk(String apkPath) async {
-    if (apkPath.isEmpty) return false;
+  /// 安装 APK 到指定设备。
+  /// 返回 null 表示成功；非空为失败原因（由调用方弹窗展示，避免 Toast 一闪而过）。
+  Future<String?> installApk(String apkPath) async {
+    if (apkPath.isEmpty) return 'APK 路径为空';
 
     try {
       ProcessResult? result;
@@ -751,36 +751,27 @@ class AdbService {
           apkPath
         ]);
       } catch (e) {
-        // 如果 _execAdb 抛出异常，尝试从异常中提取信息
         debugPrint('执行 ADB 安装命令异常: $e');
         String errorMsg = e.toString();
-        // 尝试从异常信息中提取 ADB 错误信息
         if (errorMsg.contains('adb:')) {
-          // 提取 adb: 后面的错误信息
           int adbIndex = errorMsg.indexOf('adb:');
           String adbError = errorMsg.substring(adbIndex);
-          // 提取第一行关键错误
           List<String> lines = adbError.split('\n');
           if (lines.isNotEmpty) {
             String firstLine = lines[0].trim();
             if (firstLine.startsWith('adb:')) {
-              SmartDialogUtils.showError('安装 APK 失败: ${firstLine.substring(4).trim()}');
-              return false;
+              return firstLine.substring(4).trim();
             }
           }
         }
-        SmartDialogUtils.showError('安装 APK 失败: $errorMsg');
-        return false;
+        return errorMsg;
       }
-      
+
       if (result == null) {
-        // result 为 null 表示命令执行异常，但无法获取详细错误信息
-        SmartDialogUtils.showError('安装 APK 失败: 无法执行 ADB 命令，请检查 ADB 连接和设备状态');
-        return false;
+        return '无法执行 ADB 命令，请检查 ADB 连接和设备状态';
       }
-      
+
       if (result.exitCode != 0) {
-        // 获取错误信息，优先使用 stderr，其次使用 stdout
         String errorMessage = result.stderr.toString().trim();
         if (errorMessage.isEmpty) {
           errorMessage = result.stdout.toString().trim();
@@ -788,18 +779,14 @@ class AdbService {
         if (errorMessage.isEmpty) {
           errorMessage = '安装失败，退出码: ${result.exitCode}';
         }
-        // 使用错误 toast 显示原始错误信息
-        SmartDialogUtils.showError('安装 APK 失败: $errorMessage');
-        return false;
+        return errorMessage;
       }
-      
-      return true;
+
+      return null;
     } catch (e) {
       String errorMsg = e.toString();
       debugPrint('安装 APK 失败: $errorMsg');
-      // 使用错误 toast 显示原始错误信息
-      SmartDialogUtils.showError('安装 APK 失败: $errorMsg');
-      return false;
+      return errorMsg;
     }
   }
 

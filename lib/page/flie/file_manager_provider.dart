@@ -3,6 +3,7 @@ import 'package:adb_player/page/flie/file_manager_state.dart';
 import 'package:adb_player/page/flie/file_model.dart';
 import 'package:adb_player/services/adb_service.dart';
 import 'package:adb_player/dialog/smart_dialog_utils.dart';
+import 'package:adb_player/dialog/result_dialog.dart';
 import 'package:adb_player/common/app.dart';
 import 'package:file_selector/file_selector.dart';
 import 'package:flutter/material.dart';
@@ -173,8 +174,12 @@ class FileManagerNotifier extends StateNotifier<FileManagerState> {
     for (var file in data.files) {
       if (file.path.endsWith(".apk")) {
         // 安装 APK
-        var success = await AdbService.instance.installApk(file.path);
-        msg += "${file.name} ${success ? '安装成功' : '安装失败'}\n";
+        final error = await AdbService.instance.installApk(file.path);
+        if (error == null) {
+          msg += "${file.name} 安装成功\n";
+        } else {
+          msg += "${file.name} 安装失败：$error\n";
+        }
       } else {
         // 推送文件到设备
         var success = await AdbService.instance.pushFile(file.path, devicePath);
@@ -184,8 +189,22 @@ class FileManagerNotifier extends StateNotifier<FileManagerState> {
     
     // 刷新文件列表
     await getFileList();
-    
-    SmartDialogUtils.showResult(content: msg);
+
+    final hasFail = msg.contains('失败');
+    final hasOk = msg.contains('成功');
+    await SmartDialogUtils.showResult(
+      title: hasFail && !hasOk
+          ? '操作失败'
+          : hasFail
+              ? '部分完成'
+              : '操作成功',
+      content: msg.trim(),
+      type: hasFail && !hasOk
+          ? ResultDialogType.error
+          : hasFail
+              ? ResultDialogType.info
+              : ResultDialogType.success,
+    );
     // 显示结果
   }
   

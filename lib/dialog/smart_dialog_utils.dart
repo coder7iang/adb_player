@@ -125,15 +125,18 @@ class SmartDialogUtils {
     return result ?? false;
   }
 
-  /// 显示确认对话框
+  /// 显示结果对话框
   static Future<bool> showResult({
     String? title,
     String? content,
+    ResultDialogType type = ResultDialogType.info,
   }) async {
     bool? result = await SmartDialog.show(
+      clickMaskDismiss: false,
       builder: (context) => ResultDialog(
         title: title,
         content: content,
+        type: type,
       ),
     );
     return result ?? false;

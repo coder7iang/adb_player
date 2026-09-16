@@ -7,6 +7,7 @@ import 'package:adb_player/entity/list_filter_item.dart';
 import 'package:adb_player/entity/monkey_result.dart';
 import 'package:adb_player/dialog/package_list_provider.dart';
 import 'package:adb_player/dialog/smart_dialog_utils.dart';
+import 'package:adb_player/dialog/result_dialog.dart';
 import 'package:adb_player/dialog/sp_edit_dialog.dart';
 import 'package:file_selector/file_selector.dart';
 import 'package:flutter/material.dart';
@@ -76,17 +77,29 @@ class FeatureNotifier extends StateNotifier<FeatureState> {
   Future<void> installApk(String apkPath) async {
     if (apkPath.isEmpty) return;
     try {
-      // 使用 AdbService 安装 APK
       SmartDialogUtils.showLoading("正在安装应用...");
-      final success = await AdbService.instance.installApk(apkPath);
+      final error = await AdbService.instance.installApk(apkPath);
       SmartDialogUtils.hideLoading();
-      if (success) {
-        SmartDialogUtils.showSuccess("安装成功");
+      if (error == null) {
+        await SmartDialogUtils.showResult(
+          title: '安装成功',
+          content: 'APK 已安装到设备',
+          type: ResultDialogType.success,
+        );
       } else {
-        SmartDialogUtils.showError("安装失败");
+        await SmartDialogUtils.showResult(
+          title: '安装失败',
+          content: error,
+          type: ResultDialogType.error,
+        );
       }
     } catch (e) {
-      SmartDialogUtils.showError("安装失败: $e");
+      SmartDialogUtils.hideLoading();
+      await SmartDialogUtils.showResult(
+        title: '安装失败',
+        content: '$e',
+        type: ResultDialogType.error,
+      );
     }
   }
   
@@ -204,7 +217,11 @@ class FeatureNotifier extends StateNotifier<FeatureState> {
       SmartDialogUtils.hideLoading();
       
       if (activity != null && activity.isNotEmpty) {
-        SmartDialogUtils.showConfirm(title: "当前Activity", content: "当前Activity: $activity");
+        SmartDialogUtils.showResult(
+          title: '当前 Activity',
+          content: activity,
+          type: ResultDialogType.info,
+        );
       } else {
         SmartDialogUtils.showWarning("没有前台Activity");
       }
@@ -500,7 +517,11 @@ class FeatureNotifier extends StateNotifier<FeatureState> {
       // 这里应该调用实际的 ADB 命令获取安装路径
       String? path = await AdbService.instance.getAppInstallPath();
       if (path.isNotEmpty) {
-        SmartDialogUtils.showResult(title: "应用安装路径", content: "应用安装路径: $path");
+        SmartDialogUtils.showResult(
+          title: '应用安装路径',
+          content: path,
+          type: ResultDialogType.info,
+        );
       } else {
         SmartDialogUtils.showError("获取应用安装路径失败");
       }
@@ -728,7 +749,11 @@ class FeatureNotifier extends StateNotifier<FeatureState> {
     try {
       String? androidId = await AdbService.instance.getAndroidId();
       if (androidId.isNotEmpty) {
-        SmartDialogUtils.showResult(title: "Android ID", content: "Android ID: $androidId");
+        SmartDialogUtils.showResult(
+          title: 'Android ID',
+          content: androidId,
+          type: ResultDialogType.info,
+        );
       } else {
         SmartDialogUtils.showError("获取Android ID失败");
       }
@@ -752,7 +777,11 @@ class FeatureNotifier extends StateNotifier<FeatureState> {
       String version = await AdbService.instance.getDeviceVersion();
       
       if (version.isNotEmpty) {
-        SmartDialogUtils.showResult(title: "设备版本", content: "设备版本: $version");
+        SmartDialogUtils.showResult(
+          title: '设备版本',
+          content: version,
+          type: ResultDialogType.info,
+        );
       } else {
         SmartDialogUtils.showError("获取设备版本失败");
       }
@@ -776,7 +805,11 @@ class FeatureNotifier extends StateNotifier<FeatureState> {
       String ipAddress = await AdbService.instance.getDeviceIpAddress();
       
       if (ipAddress.isNotEmpty) {
-        SmartDialogUtils.showResult(title: "设备IP地址", content: "设备IP地址: $ipAddress");
+        SmartDialogUtils.showResult(
+          title: '设备 IP 地址',
+          content: ipAddress,
+          type: ResultDialogType.info,
+        );
       } else {
         SmartDialogUtils.showError("获取设备IP地址失败");
       }
@@ -802,7 +835,10 @@ class FeatureNotifier extends StateNotifier<FeatureState> {
       String macAddress = await AdbService.instance.getDeviceMac();
       if (macAddress.isNotEmpty) {
         SmartDialogUtils.showResult(
-            title: "设备MAC地址", content: "设备MAC地址: $macAddress");
+          title: '设备 MAC 地址',
+          content: macAddress,
+          type: ResultDialogType.info,
+        );
       } else {
         SmartDialogUtils.showError("获取设备MAC地址失败");
       }
