@@ -8,6 +8,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:video_player/video_player.dart';
 import 'package:webview_flutter/webview_flutter.dart';
+import 'package:webview_win_floating/webview_win_floating.dart';
 
 String _mediaImageExt(String url) {
   final u = url.toLowerCase();
@@ -162,6 +163,16 @@ class _WatermarkRemovePageState extends State<WatermarkRemovePage> {
           },
         ),
       );
+    // Windows 为浮动原生层，屏外定位裁剪无效，需显式隐藏以免挡 UI
+    _hideWindowsWebViewOverlay();
+  }
+
+  void _hideWindowsWebViewOverlay() {
+    if (!Platform.isWindows) return;
+    final platform = _webController.platform;
+    if (platform is WindowsPlatformWebViewController) {
+      unawaited(platform.controller.setVisibility(false));
+    }
   }
 
   Future<void> _injectHook({ShortVideoPlatform? platform}) async {

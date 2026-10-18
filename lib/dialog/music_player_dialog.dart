@@ -2,6 +2,7 @@ import 'package:audioplayers/audioplayers.dart';
 import 'package:adb_player/dialog/smart_dialog_utils.dart';
 import 'package:file_selector/file_selector.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 class MusicPlayerDialog extends StatefulWidget {
   const MusicPlayerDialog({Key? key}) : super(key: key);
@@ -54,7 +55,16 @@ class _MusicPlayerDialogState extends State<MusicPlayerDialog> {
         _filePath = 'asset:$_defaultAssetPath';
         _fileName = _defaultAssetName;
       });
-      await _player.play(AssetSource(_defaultAssetPath));
+      // BytesSource 避免 Windows 上 AssetSource 固定 Temp 路径被占用
+      final byteData = await rootBundle.load('assets/$_defaultAssetPath');
+      await _player.play(
+        BytesSource(
+          byteData.buffer.asUint8List(
+            byteData.offsetInBytes,
+            byteData.lengthInBytes,
+          ),
+        ),
+      );
     } catch (e) {
       SmartDialogUtils.showError('默认音乐加载失败: $e');
     }
@@ -62,7 +72,9 @@ class _MusicPlayerDialogState extends State<MusicPlayerDialog> {
 
   @override
   void dispose() {
-    _player.dispose();
+    final player = _player;
+    // 先停再释放，降低 Windows 文件占用概率
+    player.stop().whenComplete(() => player.dispose());
     super.dispose();
   }
 

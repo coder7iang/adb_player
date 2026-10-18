@@ -1,3 +1,6 @@
+import 'dart:async';
+import 'dart:io';
+
 import 'package:adb_player/dialog/smart_dialog_utils.dart';
 import 'package:adb_player/page/play/code_rain_page.dart';
 import 'package:adb_player/page/play/food_roulette_page.dart';
@@ -46,22 +49,43 @@ class _PlayPageState extends State<PlayPage> {
   bool _showLiangCalibrator = false;
   List<String>? _videoFeedUrls;
   String _videoFeedTitle = '赏心悦目';
-  PdfControllerPinch? _pdfController;
+  // Windows 不支持 PdfViewPinch，需用 PdfView + PdfController
+  PdfControllerPinch? _pdfPinchController;
+  PdfController? _pdfController;
 
   AudioPlayer? _laborPlayer;
   bool _laborMuted = true;
   double _laborVolume = 1.0;
 
+  bool get _usePdfPinch => !Platform.isWindows;
+
+  void _disposePdfControllers() {
+    _pdfPinchController?.dispose();
+    _pdfPinchController = null;
+    _pdfController?.dispose();
+    _pdfController = null;
+  }
+
   @override
   void dispose() {
-    _pdfController?.dispose();
+    _disposePdfControllers();
     _disposeLaborPlayer();
     super.dispose();
   }
 
   void _disposeLaborPlayer() {
-    _laborPlayer?.dispose();
+    final player = _laborPlayer;
     _laborPlayer = null;
+    if (player == null) return;
+    // Windows 上需先 stop 再 dispose，否则 Temp 里的资源文件会被占用
+    unawaited(() async {
+      try {
+        await player.stop();
+      } catch (_) {}
+      try {
+        await player.dispose();
+      } catch (_) {}
+    }());
   }
 
   @override
@@ -290,14 +314,17 @@ class _PlayPageState extends State<PlayPage> {
 
   Future<void> _openLaborLawPdf() async {
     try {
-      _pdfController?.dispose();
+      _disposePdfControllers();
       final byteData = await rootBundle.load('assets/file/劳动法学习.pdf');
-      _pdfController = PdfControllerPinch(
-        document: PdfDocument.openData(
-          byteData.buffer
-              .asUint8List(byteData.offsetInBytes, byteData.lengthInBytes),
-        ),
+      final document = PdfDocument.openData(
+        byteData.buffer
+            .asUint8List(byteData.offsetInBytes, byteData.lengthInBytes),
       );
+      if (_usePdfPinch) {
+        _pdfPinchController = PdfControllerPinch(document: document);
+      } else {
+        _pdfController = PdfController(document: document);
+      }
       setState(() {
         _showLaborLawPdf = true;
       });
@@ -314,8 +341,23 @@ class _PlayPageState extends State<PlayPage> {
     try {
       await player.setReleaseMode(ReleaseMode.loop);
       await player.setVolume(_laborMuted ? 0 : _laborVolume);
-      await player.play(AssetSource(_laborBgmAsset));
+      // 用 BytesSource，避免 AssetSource 落到固定 Temp 路径被占用（errno 32）
+      final byteData = await rootBundle.load('assets/$_laborBgmAsset');
+      await player.play(
+        BytesSource(
+          byteData.buffer.asUint8List(
+            byteData.offsetInBytes,
+            byteData.lengthInBytes,
+          ),
+        ),
+      );
     } catch (e) {
+      if (_laborPlayer == player) {
+        _laborPlayer = null;
+      }
+      try {
+        await player.dispose();
+      } catch (_) {}
       SmartDialogUtils.showError('背景音乐加载失败: $e');
     }
   }
@@ -334,8 +376,26 @@ class _PlayPageState extends State<PlayPage> {
     setState(() {
       _showLaborLawPdf = false;
     });
-    _pdfController?.dispose();
-    _pdfController = null;
+    _disposePdfControllers();
+  }
+
+  Widget _buildLaborPdfViewer() {
+    const bg = BoxDecoration(color: Color.fromARGB(255, 250, 250, 250));
+    if (_usePdfPinch) {
+      final controller = _pdfPinchController;
+      if (controller == null) return const SizedBox.shrink();
+      return PdfViewPinch(
+        controller: controller,
+        backgroundDecoration: bg,
+      );
+    }
+    final controller = _pdfController;
+    if (controller == null) return const SizedBox.shrink();
+    return PdfView(
+      controller: controller,
+      scrollDirection: Axis.vertical,
+      backgroundDecoration: bg,
+    );
   }
 
   Widget _buildLaborLawPdfView() {
@@ -361,16 +421,7 @@ class _PlayPageState extends State<PlayPage> {
               ],
             ),
             const SizedBox(height: 8),
-            Expanded(
-              child: _pdfController == null
-                  ? const SizedBox.shrink()
-                  : PdfViewPinch(
-                      controller: _pdfController!,
-                      backgroundDecoration: const BoxDecoration(
-                        color: Color.fromARGB(255, 250, 250, 250),
-                      ),
-                    ),
-            ),
+            Expanded(child: _buildLaborPdfViewer()),
           ],
         ),
         Positioned(

@@ -50,6 +50,8 @@ dependencies:
   window_manager: ^0.3.2
   url_launcher: ^6.0.20
   webview_flutter: ^4.13.0
+  # Windows/Linux 桌面端 WebView 实现（官方 webview_flutter 不支持 Windows）
+  webview_win_floating: ^3.0.0
   # The following adds the Cupertino Icons font to your application.
   # Use with the CupertinoIcons class for iOS style icons.
   cupertino_icons: ^1.0.2

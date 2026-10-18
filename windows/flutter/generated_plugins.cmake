@@ -6,11 +6,13 @@ list(APPEND FLUTTER_PLUGIN_LIST
   audioplayers_windows
   desktop_drop
   file_selector_windows
+  fullscreen_window
   pdfx
   screen_retriever
   system_tray
   url_launcher_windows
   video_player_win
+  webview_win_floating
   window_manager
 )
 

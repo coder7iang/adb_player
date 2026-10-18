@@ -6,9 +6,11 @@ list(APPEND FLUTTER_PLUGIN_LIST
   audioplayers_linux
   desktop_drop
   file_selector_linux
+  fullscreen_window
   screen_retriever
   system_tray
   url_launcher_linux
+  webview_win_floating
   window_manager
 )
 
