@@ -464,18 +464,18 @@ class ScrcpyService {
             final arch = result.stdout.toString().trim();
             if (arch == 'arm64') {
               // Apple Silicon (M1/M2/M3) 架构
-              url = "https://coder7iang-1320222289.cos.ap-guangzhou.myqcloud.com/scrcpy-macos-aarch64-v3.3.4.tar.gz";
+              url = "https://coder7iang-1320222289.cos.ap-guangzhou.myqcloud.com/scrcpy/scrcpy-macos-aarch64-v3.3.4.tar.gz";
             } else {
               // Intel x86_64 架构
-              url = "https://coder7iang-1320222289.cos.ap-guangzhou.myqcloud.com/scrcpy-macos-x86_64-v3.3.4.tar.gz";
+              url = "https://coder7iang-1320222289.cos.ap-guangzhou.myqcloud.com/scrcpy/scrcpy-macos-x86_64-v3.3.4.tar.gz";
             }
           } else {
             // 如果检测失败，默认使用 Intel 版本
-            url = "https://coder7iang-1320222289.cos.ap-guangzhou.myqcloud.com/scrcpy-macos-x86_64-v3.3.4.tar.gz";
+            url = "https://coder7iang-1320222289.cos.ap-guangzhou.myqcloud.com/scrcpy/scrcpy-macos-x86_64-v3.3.4.tar.gz";
           }
         } catch (e) {
           // 如果检测异常，默认使用 Intel 版本
-          url = "https://coder7iang-1320222289.cos.ap-guangzhou.myqcloud.com/scrcpy-macos-x86_64-v3.3.4.tar.gz";
+          url = "https://coder7iang-1320222289.cos.ap-guangzhou.myqcloud.com/scrcpy/scrcpy-macos-x86_64-v3.3.4.tar.gz";
         }
       } else if (Platform.isWindows) {
         final arch =
