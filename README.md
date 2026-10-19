@@ -4,12 +4,13 @@
 
 AdbPlayer 是一款基于 Flutter 的桌面端 Android 设备调试工具，面向开发与测试人员，把日常需要敲命令的 ADB 操作封装成可视化界面。支持 USB 与无线（Wi-Fi）连接，覆盖应用管理、文件管理、日志抓取、投屏、Monkey 测试等常用调试场景。
 
-支持 **macOS / Windows / Linux** 三端桌面运行。
+支持 **macOS / Windows / Linux** 三端桌面运行（预编译安装包目前提供 macOS / Windows）。
 
 ## 下载
 
-- **Windows**：https://coder7iang-1320222289.cos.ap-guangzhou.myqcloud.com/AdbPlayer/AdbPlayer-win.rar
-- **macOS**：https://coder7iang-1320222289.cos.ap-guangzhou.myqcloud.com/AdbPlayer/AdbPlayer-mac.zip
+- **Windows**：[AdbPlayer-win.rar](https://coder7iang-1320222289.cos.ap-guangzhou.myqcloud.com/AdbPlayer/AdbPlayer-win.rar)
+- **macOS**：[AdbPlayer-mac.zip](https://coder7iang-1320222289.cos.ap-guangzhou.myqcloud.com/AdbPlayer/AdbPlayer-mac.zip)
+- **Linux**：暂无预编译包，请按下方「开发与构建」自行编译
 
 > Windows 版为完整运行包（含 exe 与依赖 DLL），解压后运行 `adb_player.exe` 即可，请勿只复制单个 exe 文件。
 
@@ -21,7 +22,9 @@ AdbPlayer 是一款基于 Flutter 的桌面端 Android 设备调试工具，面�
 sudo xattr -cr /Applications/AdbPlayer.app
 ```
 
-之后双击打开即可，无需再每次去“系统设置 → 隐私与安全性”放行。
+之后双击打开即可，无需再每次去「系统设置 → 隐私与安全性」放行。
+
+使用无线调试（二维码配对 / 局域网发现）时，请在「系统设置 → 隐私与安全性 → 本地网络」中允许 AdbPlayer。
 
 ## 功能特性
 
@@ -69,7 +72,10 @@ sudo xattr -cr /Applications/AdbPlayer.app
 ### 其他模块
 - 文件管理：浏览设备文件，上传 / 下载
 - 日志管理：实时抓取并过滤 logcat 日志，导出到本地
+- 开发者手册：常用 ADB 命令速查与说明
 - 系统托盘常驻，关闭窗口最小化到托盘
+- 设置页可配置 ADB / scrcpy 路径与截图保存目录；未配置时会尝试自动下载平台工具
+- 趣味页：吃什么转盘、劳动法 PDF、装忙模式、短视频、去水印（抖音 / 快手视频与图文）等
 
 ## 更新说明（1.2.1）
 
@@ -83,7 +89,7 @@ sudo xattr -cr /Applications/AdbPlayer.app
 - **Flutter**（Dart SDK `>=3.10.0`，Flutter `>=3.38.0`）
 - **状态管理**：flutter_riverpod / riverpod_annotation
 - **桌面集成**：window_manager、system_tray、desktop_drop、file_selector
-- **核心能力**：process_run（调用 ADB / scrcpy）、dio、archive、webview_flutter、video_player、lottie、qr_flutter
+- **核心能力**：process_run（调用 ADB / scrcpy）、dio、archive、webview_flutter、video_player、audioplayers、pdfx、lottie、qr_flutter
 
 ## 开发与构建
 
@@ -102,7 +108,7 @@ flutter build windows
 flutter build linux
 ```
 
-> 运行投屏、设备调试等功能需本机环境包含可用的 `adb`（及投屏所需的 `scrcpy`）。
+> 首次使用调试 / 投屏功能时，若本机未配置 `adb` / `scrcpy`，应用会尝试自动下载到本地缓存目录；也可在设置页手动指定路径。
 
 ## 项目结构
 
@@ -110,14 +116,16 @@ flutter build linux
 lib/
 ├── main.dart            # 入口，窗口与系统托盘初始化
 ├── common/              # 通用工具、键码、全局配置
-├── services/            # adb_service / scrcpy_service / video_cache_service
+├── services/            # adb / scrcpy / 视频缓存 / 去水印解析 等
 ├── page/                # 主要页面
 │   ├── main/            #   主框架与左侧导航
 │   ├── feature/         #   功能面板（各类调试操作）
 │   ├── flie/            #   文件管理
 │   ├── log/             #   日志管理
+│   ├── handbook/        #   开发者手册
 │   ├── setting/         #   设置
-│   ├── play/ web/ about/
+│   ├── play/            #   趣味功能（含去水印等）
+│   ├── web/ about/
 ├── dialog/              # 各类对话框（设备选择、无线连接、Monkey、录屏等）
 ├── entity/              # 数据模型
 └── widget/              # 通用组件
