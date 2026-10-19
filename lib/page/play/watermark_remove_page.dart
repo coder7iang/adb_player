@@ -301,10 +301,20 @@ class _WatermarkRemovePageState extends State<WatermarkRemovePage> {
   }
 
   void _finishSuccess(DouyinResolveResult result) {
+    final v = result.videoUrl;
+    final wmHints = <String>[
+      if (v.contains('playwm')) 'playwm',
+      if (v.contains('watermark=0')) 'wm0',
+      if (v.contains('unwatermarked')) 'unwm',
+      if (v.contains('/aweme/v1/play/')) 'play_api',
+      if (v.contains('download')) 'download',
+    ].join(',');
     _log(
       '解析完成 source=${result.source} id=${result.awemeId} '
       'type=${result.mediaType.name} '
-      'images=${result.imageUrls.length} cover=${result.coverUrl != null}',
+      'images=${result.imageUrls.length} cover=${result.coverUrl != null} '
+      'hints=$wmHints '
+      'video=${v.isEmpty ? "(none)" : v.substring(0, v.length.clamp(0, 120))}',
     );
     final hint = result.isImageNote
         ? '解析成功（${result.source}），共 ${result.imageUrls.length} 张图。直链有时效，请尽快保存。'

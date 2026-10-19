@@ -1,7 +1,9 @@
 import 'dart:async';
 import 'dart:io';
+import 'dart:math';
 
 import 'package:adb_player/dialog/smart_dialog_utils.dart';
+import 'package:path_provider/path_provider.dart';
 import 'package:adb_player/page/play/code_rain_page.dart';
 import 'package:adb_player/page/play/food_roulette_page.dart';
 import 'package:adb_player/page/play/liang_calibrator_page.dart';
@@ -54,6 +56,7 @@ class _PlayPageState extends State<PlayPage> {
   PdfController? _pdfController;
 
   AudioPlayer? _laborPlayer;
+  File? _laborBgmTempFile;
   bool _laborMuted = true;
   double _laborVolume = 1.0;
 
@@ -75,15 +78,22 @@ class _PlayPageState extends State<PlayPage> {
 
   void _disposeLaborPlayer() {
     final player = _laborPlayer;
+    final temp = _laborBgmTempFile;
     _laborPlayer = null;
-    if (player == null) return;
-    // Windows 上需先 stop 再 dispose，否则 Temp 里的资源文件会被占用
+    _laborBgmTempFile = null;
+    if (player == null && temp == null) return;
+    // 先 stop 再 dispose，避免 Temp 资源被占用；播完后清理临时文件
     unawaited(() async {
       try {
-        await player.stop();
+        await player?.stop();
       } catch (_) {}
       try {
-        await player.dispose();
+        await player?.dispose();
+      } catch (_) {}
+      try {
+        if (temp != null && await temp.exists()) {
+          await temp.delete();
+        }
       } catch (_) {}
     }());
   }
@@ -341,16 +351,11 @@ class _PlayPageState extends State<PlayPage> {
     try {
       await player.setReleaseMode(ReleaseMode.loop);
       await player.setVolume(_laborMuted ? 0 : _laborVolume);
-      // 用 BytesSource，避免 AssetSource 落到固定 Temp 路径被占用（errno 32）
-      final byteData = await rootBundle.load('assets/$_laborBgmAsset');
-      await player.play(
-        BytesSource(
-          byteData.buffer.asUint8List(
-            byteData.offsetInBytes,
-            byteData.lengthInBytes,
-          ),
-        ),
-      );
+      // 写入唯一临时文件再播：
+      // - Windows：避免 AssetSource 固定 Temp 路径被占用（errno 32）
+      // - macOS：Darwin 未实现 BytesSource / setSourceBytes
+      final source = await _prepareLaborBgmSource();
+      await player.play(source);
     } catch (e) {
       if (_laborPlayer == player) {
         _laborPlayer = null;
@@ -360,6 +365,23 @@ class _PlayPageState extends State<PlayPage> {
       } catch (_) {}
       SmartDialogUtils.showError('背景音乐加载失败: $e');
     }
+  }
+
+  Future<Source> _prepareLaborBgmSource() async {
+    final byteData = await rootBundle.load('assets/$_laborBgmAsset');
+    final bytes = byteData.buffer.asUint8List(
+      byteData.offsetInBytes,
+      byteData.lengthInBytes,
+    );
+    final dir = await getTemporaryDirectory();
+    final stamp = DateTime.now().microsecondsSinceEpoch;
+    final rand = Random().nextInt(0xFFFFFF).toRadixString(16);
+    final file = File(
+      '${dir.path}${Platform.pathSeparator}labor_bgm_${stamp}_$rand.mp3',
+    );
+    await file.writeAsBytes(bytes, flush: true);
+    _laborBgmTempFile = file;
+    return DeviceFileSource(file.path);
   }
 
   Future<void> _toggleLaborMute() async {

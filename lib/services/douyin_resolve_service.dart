@@ -125,13 +125,87 @@ class DouyinResolveService {
   window.__dyHooked = true;
   window.__dyCapture = {video:'', cover:'', title:'', source:'', images:[]};
 
-  function firstUrl(addr){
+  function scoreUrl(u){
+    if (!u || typeof u !== 'string') return -999;
+    if (u.indexOf('blob:') === 0) return -999;
+    if (u.indexOf('http') !== 0) return -999;
+    if (u.indexOf('playwm') >= 0) return -999; // 平台水印流
+    var s = 0;
+    if (u.indexOf('watermark=0') >= 0) s += 50;
+    if (u.indexOf('unwatermarked') >= 0) s += 40;
+    if (u.indexOf('douyinvod') >= 0 || u.indexOf('bytevod') >= 0) s += 15;
+    if (u.indexOf('365yg.com') >= 0) s += 10;
+    if (u.indexOf('/aweme/v1/play/') >= 0) s += 25;
+    if (u.indexOf('mime_type=video_mp4') >= 0) s += 5;
+    return s;
+  }
+
+  function pickUrl(addr){
     try {
       if (!addr || !addr.url_list || !addr.url_list.length) return '';
-      var u = addr.url_list[0] || '';
-      if (!u || u.indexOf('blob:') === 0 || u.indexOf('playwm') >= 0) return '';
-      return u;
+      var best = '';
+      var bestScore = -1;
+      for (var i = 0; i < addr.url_list.length; i++) {
+        var u = addr.url_list[i] || '';
+        var sc = scoreUrl(u);
+        if (sc > bestScore) {
+          bestScore = sc;
+          best = u;
+        }
+      }
+      return bestScore >= 0 ? best : '';
     } catch (e) { return ''; }
+  }
+
+  function firstUrl(addr){ return pickUrl(addr); }
+
+  function pickVideo(v){
+    // play_addr 多为去平台标流；download_addr 反而常带下载角标
+    var parts = [
+      {n:'play_addr', a:v.play_addr},
+      {n:'play_addr_h264', a:v.play_addr_h264},
+      {n:'download_addr', a:v.download_addr}
+    ];
+    try {
+      if (v.bit_rate && v.bit_rate.length) {
+        for (var bi = 0; bi < v.bit_rate.length; bi++) {
+          var br = v.bit_rate[bi] || {};
+          parts.push({n:'bit_rate', a: br.play_addr});
+        }
+      }
+    } catch (e) {}
+
+    var best = '';
+    var bestScore = -1;
+    var bestName = '';
+    for (var i = 0; i < parts.length; i++) {
+      var u = pickUrl(parts[i].a);
+      var sc = scoreUrl(u);
+      // 同质量时优先 play_addr，压低 download_addr（后者常带平台角标）
+      if (parts[i].n === 'play_addr' || parts[i].n === 'play_addr_h264') sc += 8;
+      if (parts[i].n === 'download_addr') sc -= 12;
+      if (sc > bestScore) {
+        bestScore = sc;
+        best = u;
+        bestName = parts[i].n;
+      }
+    }
+
+    // 仅在没有 CDN 直链时，用 uri 拼 watermark=0 播放接口（该接口常需 Cookie）
+    if (!best) {
+      try {
+        var uri = (v.play_addr && v.play_addr.uri)
+          || (v.download_addr && v.download_addr.uri)
+          || '';
+        if (uri) {
+          best = 'https://www.douyin.com/aweme/v1/play/?video_id='
+            + encodeURIComponent(uri)
+            + '&ratio=default&line=0&improve_bitrate=1&watermark=0';
+          bestName = 'play_api_wm0';
+        }
+      } catch (e) {}
+    }
+    return {url: best, field: bestName};
   }
 
   function grab(text){
@@ -154,10 +228,10 @@ class DouyinResolveService {
           } else if (it.url_list && it.url_list.length) {
             iu = it.url_list[0];
           } else {
-            iu = firstUrl(it)
-              || firstUrl(it.download_url)
-              || firstUrl(it.origin_url)
-              || firstUrl(it.display_image)
+            iu = pickUrl(it)
+              || pickUrl(it.download_url)
+              || pickUrl(it.origin_url)
+              || pickUrl(it.display_image)
               || '';
           }
           if (iu && iu.indexOf('http') === 0) imgs.push(iu);
@@ -171,14 +245,11 @@ class DouyinResolveService {
 
       var v = d.video;
       if (!v) return;
-      var video = firstUrl(v.download_addr)
-        || firstUrl(v.play_addr)
-        || firstUrl(v.play_addr_h264)
-        || '';
-      var cover = firstUrl(v.origin_cover) || firstUrl(v.cover) || '';
-      if (video) {
-        window.__dyCapture.video = video;
-        window.__dyCapture.source = window.__dyCapture.source || 'detail';
+      var picked = pickVideo(v);
+      var cover = pickUrl(v.origin_cover) || pickUrl(v.cover) || '';
+      if (picked.url) {
+        window.__dyCapture.video = picked.url;
+        window.__dyCapture.source = 'detail/' + (picked.field || 'unknown');
       }
       if (cover && !window.__dyCapture.cover) window.__dyCapture.cover = cover;
     } catch (e) {}
@@ -368,6 +439,21 @@ class DouyinResolveService {
   /// 轮询读取捕获结果
   static const String readCaptureJs = r'''
 (function(){
+  function scoreUrl(u){
+    if (!u || typeof u !== 'string') return -999;
+    if (u.indexOf('blob:') === 0) return -999;
+    if (u.indexOf('http') !== 0) return -999;
+    if (u.indexOf('playwm') >= 0) return -999;
+    var s = 0;
+    if (u.indexOf('watermark=0') >= 0) s += 50;
+    if (u.indexOf('unwatermarked') >= 0) s += 40;
+    if (u.indexOf('douyinvod') >= 0 || u.indexOf('bytevod') >= 0) s += 15;
+    if (u.indexOf('365yg.com') >= 0) s += 10;
+    if (u.indexOf('/aweme/v1/play/') >= 0) s += 25;
+    if (u.indexOf('mime_type=video_mp4') >= 0) s += 5;
+    return s;
+  }
+
   function okVideo(u){
     if (!u || typeof u !== 'string') return false;
     if (u.indexOf('blob:') === 0) return false;
@@ -381,6 +467,7 @@ class DouyinResolveService {
       || u.indexOf('365yg.com') >= 0
       || u.indexOf('kwaicdn.com') >= 0
       || u.indexOf('photo-video') >= 0
+      || u.indexOf('/aweme/v1/play/') >= 0
       || (u.indexOf('.mp4') >= 0 && u.indexOf('yximgs.com') >= 0)
       || (u.indexOf('mime_type=video_mp4') >= 0 && u.indexOf('/video/') >= 0);
   }
@@ -419,16 +506,22 @@ class DouyinResolveService {
     out.video = '';
     try {
       var entries = performance.getEntriesByType('resource');
+      var best = '';
+      var bestScore = -1;
       for (var i = 0; i < entries.length; i++) {
         var n = entries[i].name || '';
         if (!okVideo(n)) continue;
-        if (n.indexOf('media-video') >= 0 || n.indexOf('photo-video') >= 0) {
-          if (!out.video || n.indexOf('photo-video') >= 0) out.video = n;
-          continue;
+        var sc = scoreUrl(n);
+        if (n.indexOf('photo-video') >= 0) sc += 8;
+        if (n.indexOf('media-video') >= 0) sc += 4;
+        if (sc > bestScore) {
+          bestScore = sc;
+          best = n;
         }
-        out.video = n;
+      }
+      if (best) {
+        out.video = best;
         out.source = out.source || 'resource';
-        break;
       }
     } catch (e) {}
   }
@@ -1058,6 +1151,10 @@ class DouyinResolveService {
       if (ext == 'mp4') score += 5;
       if (vcodec != 'none' && vcodec.isNotEmpty) score += 3;
       if (acodec != 'none' && acodec.isNotEmpty) score += 4;
+      if (url.contains('watermark=0') || url.contains('unwatermarked')) {
+        score += 30;
+      }
+      if (url.contains('playwm')) score -= 100;
       final h = item['height'];
       if (h is num) score += (h ~/ 100);
       if (score > bestScore) {
